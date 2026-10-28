@@ -1,0 +1,26 @@
+{
+  "name": "bgc-ofertas",
+  "version": "1.0.0",
+  "description": "BGC Ofertas — bot Telegram de promoções e oportunidades da BGC Store.",
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test test/*.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "ofertas",
+    "bgc",
+    "promocoes"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
