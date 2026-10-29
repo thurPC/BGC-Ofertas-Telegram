@@ -1,5 +1,4 @@
 import './src/preload.js';
-import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import dotenv from 'dotenv';
@@ -14,41 +13,22 @@ import { PublishingService } from './src/services/publishing-service.js';
 import { SchedulerService } from './src/services/scheduler-service.js';
 import { JsonStorage } from './src/storage/json-storage.js';
 import { createConfiguredSources } from './src/sources/json-feed-source.js';
+import { InstanceLock } from './src/process-lock.js';
 
 dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
 
 const LOCK_FILE = path.join(PROJECT_ROOT, 'data', 'bot.pid');
+const instanceLock = new InstanceLock({
+  lockFile: LOCK_FILE,
+  pid: process.pid,
+  projectRoot: PROJECT_ROOT
+});
 let bot;
 let scheduler;
 let shuttingDown = false;
 
-function acquireInstanceLock() {
-  fs.mkdirSync(path.dirname(LOCK_FILE), { recursive: true });
-  if (fs.existsSync(LOCK_FILE)) {
-    const previous = Number.parseInt(fs.readFileSync(LOCK_FILE, 'utf8'), 10);
-    if (Number.isInteger(previous)) {
-      try {
-        process.kill(previous, 0);
-        throw new Error(
-          `Outra instância do BGC Ofertas já está em execução (pid ${previous}). Encerrando para evitar polling duplicado.`
-        );
-      } catch (error) {
-        if (error.code !== 'ESRCH' && error.message.includes('já está em execução')) throw error;
-      }
-    }
-  }
-  fs.writeFileSync(LOCK_FILE, String(process.pid), { flag: 'w' });
-}
-
 function releaseInstanceLock() {
-  try {
-    if (fs.existsSync(LOCK_FILE)) {
-      const stored = Number.parseInt(fs.readFileSync(LOCK_FILE, 'utf8'), 10);
-      if (stored === process.pid) fs.unlinkSync(LOCK_FILE);
-    }
-  } catch {
-    // ignore
-  }
+  instanceLock.release();
 }
 
 async function shutdown(signal) {
@@ -61,6 +41,31 @@ async function shutdown(signal) {
   process.exit(0);
 }
 
+function registerShutdownHandlers() {
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT']) {
+    try {
+      process.on(signal, () => {
+        shutdown(signal).catch((error) => {
+          logger.warn('Falha no encerramento.', error.message);
+          releaseInstanceLock();
+          process.exit(1);
+        });
+      });
+    } catch {
+      // sinal indisponível nesta plataforma
+    }
+  }
+  process.on('exit', () => {
+    releaseInstanceLock();
+  });
+  process.on('bgc:duplicate-polling', () => {
+    shutdown('duplicate-polling').catch(() => {
+      releaseInstanceLock();
+      process.exit(1);
+    });
+  });
+}
+
 async function main() {
   const config = loadConfig(process.env);
   if (config.missing.length) {
@@ -71,7 +76,7 @@ async function main() {
     process.exit(1);
   }
   assertRuntimeConfig(config);
-  acquireInstanceLock();
+  instanceLock.acquire();
 
   const storage = new JsonStorage(path.join(config.dataDir, 'offers.json'));
   await storage.init();
@@ -108,9 +113,7 @@ async function main() {
     logger.info('Publicação automática desativada (OFFER_AUTO_PUBLISH=false).');
   }
 
-  process.once('SIGINT', () => shutdown('SIGINT'));
-  process.once('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('bgc:duplicate-polling', () => shutdown('duplicate-polling'));
+  registerShutdownHandlers();
 }
 
 main().catch((error) => {
