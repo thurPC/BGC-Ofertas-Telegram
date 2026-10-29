@@ -31,7 +31,7 @@ export class SchedulerService {
       sources: this.sources.map((source) => source.describe()),
       note: this.config.autoPublish
         ? 'Publicação automática habilitada por configuração, mas só executa com fonte válida e confirmação operacional.'
-        : 'Publicação automática desativada por padrão. O feed pode ser lido e importado como oferta pronta, sem publicar no canal.'
+        : 'Publicação automática desativada por padrão. O feed é consultado, mas nada é importado nem publicado no canal.'
     };
   }
 

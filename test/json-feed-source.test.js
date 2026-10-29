@@ -202,6 +202,7 @@ test('OFFER_AUTO_PUBLISH permanece desativado por padrão e não publica', async
     fetchImpl: async () => jsonResponse(SAMPLE_FEED)
   });
   let publishCalled = false;
+  let createCalled = false;
   const scheduler = new SchedulerService({
     config: {
       autoPublish: false,
@@ -218,6 +219,7 @@ test('OFFER_AUTO_PUBLISH permanece desativado por padrão e não publica', async
         return [];
       },
       async create(input) {
+        createCalled = true;
         return { ok: true, offer: { id: 'x', ...input, status: 'pronta' } };
       }
     },
@@ -232,6 +234,7 @@ test('OFFER_AUTO_PUBLISH permanece desativado por padrão e não publica', async
   assert.equal(result.ok, true);
   assert.equal(result.imported, 0);
   assert.equal(result.published, 0);
+  assert.equal(createCalled, false);
   assert.equal(publishCalled, false);
   assert.ok(result.fetched >= 1);
   assert.match(result.note, /desativada/i);
