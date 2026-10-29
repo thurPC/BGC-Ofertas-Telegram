@@ -5,12 +5,9 @@ export const START_TEXT = [
   '',
   'Aqui você encontra ofertas cadastradas pela equipe BGC Store. Nada de preço inventado: só publicamos o que foi confirmado.',
   '',
-  '📌 Comandos:',
-  '/start — apresentação',
-  '/ajuda — lista de comandos',
-  '/sobre — quem somos',
+  'Siga o canal BGC Ofertas para receber as promoções. Inscritos não precisam enviar comandos: o link de compra vai no texto de cada publicação e os comentários ficam no grupo de discussão vinculado ao canal.',
   '',
-  'Siga o canal BGC Ofertas para receber as publicações. Se você é administrador, use /admin.'
+  'Se você faz parte da equipe, use /admin.'
 ].join('\n');
 
 export const HELP_TEXT = [
@@ -21,7 +18,9 @@ export const HELP_TEXT = [
   '/ajuda — esta lista',
   '/sobre — descrição do projeto',
   '',
-  'As ofertas são publicadas no canal configurado. Este chat privado serve para apresentação e, para a equipe, para o cadastro.'
+  'As ofertas são publicadas no canal. Inscritos não precisam usar comandos: basta abrir o link no texto e comentar no grupo de discussão do canal.',
+  '',
+  'Este chat privado serve para apresentação e, para a equipe, para o cadastro.'
 ].join('\n');
 
 export const ABOUT_TEXT = [
@@ -29,7 +28,7 @@ export const ABOUT_TEXT = [
   '',
   'O BGC Ofertas é o canal de promoções da identidade BGC Store: preto, grafite, cinza-escuro e verde, estilo gamer, moderno e profissional.',
   '',
-  'Publicamos ofertas com nome, preço confirmado, cupom quando existir, condições claras e link válido. Campos sem confirmação são omitidos.',
+  'Publicamos ofertas com foto real quando disponível, nome, preço confirmado, cupom quando existir e o link de compra no próprio texto. Sem botões inline na publicação, para preservar os comentários do grupo de discussão do canal. Campos sem confirmação são omitidos.',
   '',
   'Não inventamos desconto, estoque, frete ou avaliação. Se uma informação não foi conferida, ela não aparece na mensagem.'
 ].join('\n');

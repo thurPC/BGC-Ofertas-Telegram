@@ -20,18 +20,25 @@ export class OfferSource {
   }
 }
 
+function preserveText(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
 export function normalizeFetchedOffer(raw, sourceName) {
   return {
-    name: raw?.name ?? null,
+    name: preserveText(raw?.name),
     price: raw?.price ?? null,
     previousPrice: raw?.previousPrice ?? null,
     pixPrice: raw?.pixPrice ?? null,
-    coupon: raw?.coupon ?? null,
-    couponConditions: raw?.couponConditions ?? null,
-    imageUrl: raw?.imageUrl ?? raw?.image ?? null,
-    url: raw?.url ?? raw?.link ?? null,
-    store: raw?.store ?? raw?.shop ?? sourceName,
+    coupon: preserveText(raw?.coupon),
+    couponConditions: preserveText(raw?.couponConditions ?? raw?.conditions),
+    imageUrl: preserveText(raw?.imageUrl ?? raw?.image),
+    url: preserveText(raw?.url ?? raw?.link),
+    store: preserveText(raw?.store ?? raw?.shop) || sourceName,
     validUntil: raw?.validUntil ?? null,
+    externalId: preserveText(raw?.id ?? raw?.externalId),
     source: sourceName,
     fetchedAt: raw?.fetchedAt ?? new Date().toISOString()
   };

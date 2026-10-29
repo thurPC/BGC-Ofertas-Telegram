@@ -1,5 +1,5 @@
 import { logger } from '../logger.js';
-import { buildBuyButton, chooseSendMode, formatOfferHtml } from '../formatters/offer-message.js';
+import { chooseSendMode, formatOfferHtml } from '../formatters/offer-message.js';
 import { OFFER_STATUS } from './offer-service.js';
 import { validateHttpUrl } from './validation-service.js';
 
@@ -49,11 +49,9 @@ export class PublishingService {
   async sendToChat(chatId, offer) {
     const html = formatOfferHtml(offer);
     const mode = chooseSendMode(offer, html);
-    const replyMarkup = buildBuyButton(offer.url);
     const extra = {
       parse_mode: 'HTML',
-      disable_web_page_preview: false,
-      reply_markup: replyMarkup || undefined
+      disable_web_page_preview: true
     };
 
     if (mode.method === 'sendPhoto') {

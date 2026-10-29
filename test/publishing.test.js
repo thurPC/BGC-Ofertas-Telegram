@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildBuyButton, chooseSendMode, formatOfferHtml } from '../src/formatters/offer-message.js';
+import { chooseSendMode, formatOfferHtml } from '../src/formatters/offer-message.js';
 import { PublishingService } from '../src/services/publishing-service.js';
 import { JsonFeedSource, createConfiguredSources } from '../src/sources/json-feed-source.js';
 import { applyOfferFilters } from '../src/sources/source-interface.js';
@@ -21,11 +21,14 @@ const completeOffer = {
 
 test('formata oferta com imagem e omite campos vazios', () => {
   const html = formatOfferHtml(completeOffer);
-  assert.match(html, /OFERTA DO DIA/);
   assert.match(html, /Mouse Gamer &lt;RGB&gt;/);
+  assert.match(html, /Preço promocional: R\$ 149,90/);
   assert.match(html, /De: R\$ 199,90/);
   assert.match(html, /PIX: R\$ 139,90/);
-  assert.match(html, /BGC10/);
+  assert.match(html, /Cupom: <code>BGC10<\/code>/);
+  assert.match(html, /Link de compra: https:\/\/loja\.example\.com\/mouse/);
+  assert.match(html, /Compartilhe com seus amigos!/);
+  assert.doesNotMatch(html, /COMPRAR AGORA/);
   const withoutOptional = formatOfferHtml({
     name: 'Teclado',
     price: 90,
@@ -35,19 +38,44 @@ test('formata oferta com imagem e omite campos vazios', () => {
   assert.doesNotMatch(withoutOptional, /De:/);
   assert.doesNotMatch(withoutOptional, /Cupom/);
   assert.doesNotMatch(withoutOptional, /PIX:/);
+  assert.match(withoutOptional, /Link de compra: https:\/\/loja\.example\.com\/teclado/);
 });
 
 test('escolhe sendPhoto quando há imagem e sendMessage quando não há', () => {
   const withImage = chooseSendMode(completeOffer, formatOfferHtml(completeOffer));
   assert.equal(withImage.method, 'sendPhoto');
-  const noImage = chooseSendMode({ name: 'X', price: 1, url: 'https://x.test', store: 'Y' }, formatOfferHtml({ name: 'X', price: 1, url: 'https://x.test', store: 'Y' }));
+  const noImage = chooseSendMode(
+    { name: 'X', price: 1, url: 'https://x.test', store: 'Y' },
+    formatOfferHtml({ name: 'X', price: 1, url: 'https://x.test', store: 'Y' })
+  );
   assert.equal(noImage.method, 'sendMessage');
 });
 
-test('botão de compra usa URL válida', () => {
-  const markup = buildBuyButton('https://loja.example.com/mouse');
-  assert.equal(markup.inline_keyboard[0][0].url, 'https://loja.example.com/mouse');
-  assert.equal(buildBuyButton(null), null);
+test('publicação no canal não envia botões inline', async () => {
+  const sent = [];
+  const bot = {
+    async sendPhoto(chatId, photo, extra) {
+      sent.push({ method: 'sendPhoto', chatId, photo, extra });
+      return { message_id: 1 };
+    },
+    async sendMessage(chatId, text, extra) {
+      sent.push({ method: 'sendMessage', chatId, text, extra });
+      return { message_id: 2 };
+    }
+  };
+  const service = new PublishingService({
+    bot,
+    config: { channelId: '-100123' },
+    offerService: { markPublished: async () => ({ ok: true }) }
+  });
+  const result = await service.publish(completeOffer, { actorId: 1 });
+  assert.equal(result.ok, true);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].method, 'sendPhoto');
+  assert.equal(sent[0].photo, completeOffer.imageUrl);
+  assert.equal(sent[0].extra.reply_markup, undefined);
+  assert.match(sent[0].extra.caption, /Link de compra: https:\/\/loja\.example\.com\/mouse/);
+  assert.doesNotMatch(sent[0].extra.caption, /COMPRAR AGORA/);
 });
 
 test('recusa publicação sem link válido', () => {
