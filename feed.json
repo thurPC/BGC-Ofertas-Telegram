@@ -1,0 +1,15 @@
+{
+  "offers": [
+    {
+      "name": "Produto de teste BGC Ofertas",
+      "price": 99.90,
+      "previousPrice": 149.90,
+      "pixPrice": 94.90,
+      "coupon": "TESTE10",
+      "couponConditions": "Cupom fictício para teste",
+      "imageUrl": "https://placehold.co/600x600.png",
+      "url": "https://www.mercadolivre.com.br/",
+      "store": "Mercado Livre"
+    }
+  ]
+}
