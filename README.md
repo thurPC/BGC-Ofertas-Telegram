@@ -107,7 +107,7 @@ node index.js
 
 O processo usa **long polling**. Não há servidor web. Encerre com `Ctrl+C` para um shutdown controlado.
 
-Há proteção contra instância duplicada (`data/bot.pid`). Se outra cópia já estiver em polling, esta encerra para evitar conflito 409 da API.
+Há proteção contra instância duplicada (`data/bot.pid`). O arquivo guarda PID e identidade do processo. Locks de processos mortos, PID reutilizado ou conteúdo inválido são substituídos. Se outra cópia **desta aplicação** ainda estiver em execução, a nova instância encerra para evitar conflito 409 da API.
 
 ## Comandos públicos
 
@@ -283,7 +283,7 @@ Webhook exigiria HTTPS público. Esta versão usa long polling de propósito, pa
 | Sintoma | Causa provável | O que fazer |
 | --- | --- | --- |
 | Bot não inicia e cita variáveis ausentes | `.env` incompleto | Copie `.env.example` e preencha |
-| `409 Conflict` | Duas instâncias | Encerre a outra e apague `data/bot.pid` se o pid estiver morto |
+| `409 Conflict` ou lock de instância | Duas instâncias ou processo antigo ainda vivo | Encerre a outra cópia. Locks obsoletos são removidos sozinhos. Se o painel da hospedagem não matar o PID antigo, peça ao suporte para encerrar esse processo |
 | Não publica no canal | Bot sem permissão | Torne o bot administrador do canal |
 | `chat not found` | ID do canal errado | Confira `TELEGRAM_CHANNEL_ID` |
 | Imagem não aparece | URL inacessível | Publique só texto ou use outra URL |
