@@ -40,9 +40,11 @@ export function findDuplicates(offers, candidate, { excludeId } = {}) {
   const target = fingerprint(candidate);
   const name = normalizeKey(candidate.name);
   const url = String(candidate.url ?? '').trim().toLowerCase();
+  const externalId = String(candidate.externalId ?? '').trim();
   return offers.filter((offer) => {
     if (excludeId && offer.id === excludeId) return false;
     if ([OFFER_STATUS.CANCELLED, OFFER_STATUS.EXPIRED].includes(offer.status)) return false;
+    if (externalId && String(offer.externalId ?? '').trim() === externalId) return true;
     if (fingerprint(offer) === target) return true;
     if (url && String(offer.url ?? '').trim().toLowerCase() === url) return true;
     if (name && normalizeKey(offer.name) === name && normalizeKey(offer.store) === normalizeKey(candidate.store)) {
@@ -96,6 +98,9 @@ export class OfferService {
     const offer = {
       id: createOfferId(),
       ...validation.offer,
+      url: input.url || validation.offer.url,
+      imageUrl: input.imageUrl || validation.offer.imageUrl || null,
+      externalId: input.externalId ?? null,
       status: OFFER_STATUS.READY,
       createdAt: nowIso(),
       updatedAt: nowIso(),

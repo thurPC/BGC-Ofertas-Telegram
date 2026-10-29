@@ -1,5 +1,4 @@
 const URL_PATTERN = /^https?:\/\/[^\s]+$/i;
-const IMAGE_EXT = /\.(jpe?g|png|gif|webp)(\?.*)?$/i;
 
 export function escapeHtml(value) {
   return String(value ?? '')
@@ -104,12 +103,9 @@ export function validateHttpUrl(input, { required = true, image = false } = {}) 
     return { ok: false, error: 'Somente URLs http ou https são aceitas.' };
   }
   if (image && parsed.protocol === 'http:') {
-    return { ok: true, value: parsed.toString(), warning: 'Imagens HTTP podem falhar no Telegram.' };
+    return { ok: true, value: raw, warning: 'Imagens HTTP podem falhar no Telegram.' };
   }
-  if (image && !IMAGE_EXT.test(parsed.pathname) && !parsed.search) {
-    return { ok: true, value: parsed.toString() };
-  }
-  return { ok: true, value: parsed.toString() };
+  return { ok: true, value: raw };
 }
 
 export function validateRequiredText(input, field, { max = 200 } = {}) {

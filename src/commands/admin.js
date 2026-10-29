@@ -13,8 +13,9 @@ export const ADMIN_HELP_TEXT = [
   '',
   'Fluxo de cadastro: nome, preço atual, preço anterior (opcional), PIX (opcional), cupom e condições, imagem, link, loja e validade.',
   'Ao final há prévia. Só publica depois de confirmação explícita.',
+  'A publicação no canal vai com foto (quando houver) e o link no texto, sem botões inline, para não interferir nos comentários do grupo de discussão.',
   '',
-  'A busca automática só funciona com fonte autorizada configurada e permanece desativada por padrão.'
+  'A busca automática lê o feed JSON em OFFER_FEED_URL. A publicação no canal permanece desativada por padrão (OFFER_AUTO_PUBLISH=false): o feed é consultado, mas nada entra no canal sem essa flag ou /publicar.'
 ].join('\n');
 
 export function adminKeyboard() {

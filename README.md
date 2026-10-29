@@ -2,7 +2,7 @@
 
 Bot Telegram da identidade **BGC Store** para cadastro, pré-visualização e publicação de promoções no canal BGC Ofertas.
 
-Estilo visual: preto, grafite, cinza-escuro e verde. Mensagens em português brasileiro, com títulos, emojis e botão de compra compatíveis com as limitações reais do Telegram.
+Estilo visual: preto, grafite, cinza-escuro e verde. Mensagens em português brasileiro, com títulos, emojis e o link de compra no próprio texto. As publicações do canal não usam botões inline.
 
 Esta primeira versão prioriza o **cadastro manual**, a **prévia** e a **confirmação administrativa** antes de qualquer publicação. A busca automática existe como arquitetura modular e permanece **desativada** até haver uma fonte real e autorizada.
 
@@ -11,8 +11,8 @@ Esta primeira versão prioriza o **cadastro manual**, a **prévia** e a **confir
 - Comandos públicos: `/start`, `/ajuda`, `/sobre`
 - Painel administrativo com botões inline
 - Cadastro guiado de ofertas com prévia e confirmação
-- Publicação no canal via `sendPhoto` ou `sendMessage`
-- Botão **COMPRAR AGORA** com URL real
+- Publicação no canal via `sendPhoto` ou `sendMessage`, com foto real quando disponível
+- Link de compra no texto da mensagem, sem botões inline no canal
 - Estados: rascunho, pronta, publicada, expirada e cancelada
 - Detecção de possíveis duplicatas (sem exclusão automática)
 - Armazenamento JSON com gravação atômica e controle de concorrência
@@ -42,10 +42,11 @@ O bot **não inventa** preços, descontos, cupons, avaliações, frete, estoque,
 1. Crie um canal (público ou privado) para o BGC Ofertas.
 2. Adicione o bot como **administrador**.
 3. Conceda permissão para publicar mensagens. Sem isso a API recusa o envio.
-4. Obtenha o ID do canal:
+4. Se quiser comentários, vincule um **grupo de discussão** ao canal nas configurações do Telegram. As publicações não levam botões inline, para não interferir nesse recurso nativo.
+5. Obtenha o ID do canal:
    - Canal público: use `@nome_do_canal`
    - Canal privado: encaminhe uma mensagem para um bot de identificação de ID ou use o ID numérico no formato `-100...`
-5. Coloque esse valor em `TELEGRAM_CHANNEL_ID`.
+6. Coloque esse valor em `TELEGRAM_CHANNEL_ID`.
 
 Este projeto **não contorna** permissões do Telegram. O bot precisa ser adicionado ao canal com direitos adequados.
 
@@ -147,13 +148,18 @@ O fluxo de `/novaoferta` solicita, nesta ordem:
 
 Envie `pular` nos campos opcionais. Ao final o bot mostra a prévia no modelo:
 
-- OFERTA DO DIA
-- Nome
-- De / Por / PIX, somente se confirmados
-- Cupom e condições, se existirem
-- Link
-- Botão COMPRAR AGORA
-- Assinatura BGC OFERTAS
+```text
+🔥 NOME DO PRODUTO
+
+💰 Preço promocional: R$ XX,XX
+🏷️ Cupom: CUPOM (somente se existir)
+
+🛒 Link de compra: https://link-real-do-produto
+
+📢 Compartilhe com seus amigos!
+```
+
+Campos sem confirmação (preço anterior, PIX, cupom, condições, loja, validade) são omitidos. Não há botão **COMPRAR AGORA** nem qualquer outro botão inline na publicação do canal. Inscritos não precisam enviar comandos: o link está no texto e os comentários ficam no grupo de discussão vinculado ao canal.
 
 Você pode **publicar agora**, **salvar rascunho**, **corrigir** ou **cancelar**. Nenhuma publicação ocorre sem essa confirmação.
 
@@ -176,9 +182,37 @@ A pasta `src/sources/` define a interface:
 - informar origem e horário da consulta
 - aplicar filtros de preço, desconto, loja e horário
 
-Há um conector opcional de **feed JSON autorizado** (`OFFER_FEED_URL`). Mercado Livre, Amazon e Shopee **não** estão integrados nesta versão porque não há credenciais nem acordo de API neste repositório. Não inventamos endpoints, chaves ou scraping.
+Há um conector HTTP de **feed JSON autorizado** (`OFFER_FEED_URL`). O formato esperado é:
 
-Se nenhuma fonte estiver configurada, o modo manual funciona normalmente. A publicação automática só pode ser ligada com `OFFER_AUTO_PUBLISH=true` **depois** de existir fonte válida. O padrão é `false`.
+```json
+{
+  "offers": [
+    {
+      "name": "Nome do produto",
+      "price": 99.90,
+      "previousPrice": 149.90,
+      "pixPrice": 94.90,
+      "coupon": "CUPOM",
+      "couponConditions": "Regras do cupom",
+      "imageUrl": "https://exemplo.com/foto.png",
+      "url": "https://link-real-do-produto",
+      "store": "Loja"
+    }
+  ]
+}
+```
+
+Campos obrigatórios: `name`, `price`, `url`, `store`. Os demais são omitidos se vazios. A URL do produto é preservada exatamente como veio no feed (incluindo parâmetros de afiliado). Itens inválidos são ignorados e registrados; falha HTTP, JSON quebrado, timeout ou fonte indisponível não derrubam o bot.
+
+Feed de teste deste repositório:
+
+```text
+https://raw.githubusercontent.com/thurPC/BGC-Ofertas-Telegram/main/feed.json
+```
+
+Mercado Livre, Amazon e Shopee **não** estão integrados por API própria. Só existe a leitura do feed configurado. Não inventamos endpoints, chaves ou scraping.
+
+Se nenhuma fonte estiver configurada, o modo manual funciona normalmente. Com o feed configurado e `OFFER_AUTO_PUBLISH=false` (padrão), o bot **consulta** o JSON, mas **não importa** e **não publica** no canal. Duplicatas (mesmo `id` externo, mesmo link ou mesmo nome+loja) não são importadas de novo quando a importação/publicação automática estiver em uso.
 
 Não faça scraping indiscriminado, não contorne CAPTCHA e não viole termos de serviço.
 
@@ -198,7 +232,9 @@ Os testes não usam token real. Cobrem:
 - duplicatas
 - leitura/gravação JSON e recuperação de arquivo corrompido
 - formatação com e sem imagem
+- ausência de botões inline na publicação
 - ausência de fontes automáticas
+- leitura do feed JSON (sucesso, vazio, inválido, falha HTTP, timeout e deduplicação)
 
 ## Publicação no GitHub
 

@@ -14,17 +14,15 @@ export function formatOfferHtml(offer) {
   const name = escapeHtml(offer.name || 'Produto');
   const parts = [];
 
-  parts.push('🔥 <b>OFERTA DO DIA</b>');
-  parts.push('');
   parts.push(`🔥 <b>${name}</b>`);
   parts.push('');
 
-  if (offer.previousPrice != null) {
-    parts.push(`💰 De: R$ ${formatBRL(offer.previousPrice)}`);
+  if (offer.price != null) {
+    parts.push(`💰 Preço promocional: R$ ${formatBRL(offer.price)}`);
   }
 
-  if (offer.price != null) {
-    parts.push(`🔥 Por: R$ ${formatBRL(offer.price)}`);
+  if (offer.previousPrice != null) {
+    parts.push(`💸 De: R$ ${formatBRL(offer.previousPrice)}`);
   }
 
   if (offer.pixPrice != null) {
@@ -37,8 +35,7 @@ export function formatOfferHtml(offer) {
   }
 
   if (offer.coupon) {
-    parts.push('');
-    parts.push(`🎟️ Cupom: <code>${escapeHtml(offer.coupon)}</code>`);
+    parts.push(`🏷️ Cupom: <code>${escapeHtml(offer.coupon)}</code>`);
   }
 
   if (offer.couponConditions) {
@@ -58,29 +55,13 @@ export function formatOfferHtml(offer) {
 
   if (offer.url) {
     parts.push('');
-    parts.push('🔗 Link do produto:');
-    parts.push(escapeHtml(offer.url));
+    parts.push(`🛒 Link de compra: ${escapeHtml(offer.url)}`);
   }
 
   parts.push('');
-  parts.push('👉 Compartilhe com os amigos!');
-  parts.push('');
-  parts.push('📢 <b>BGC OFERTAS</b> — Promoções e oportunidades.');
+  parts.push('📢 Compartilhe com seus amigos!');
 
   return parts.filter((item, index, arr) => !(item === '' && arr[index - 1] === '')).join('\n');
-}
-
-export function buildBuyButton(url) {
-  if (!url) return null;
-  return {
-    inline_keyboard: [[{ text: '🛒 COMPRAR AGORA', url }]]
-  };
-}
-
-export function buildShareText(offer) {
-  const name = offer.name || 'oferta';
-  const price = offer.price != null ? ` por R$ ${formatBRL(offer.price)}` : '';
-  return `🔥 Confira esta oferta da BGC Ofertas: ${name}${price}`;
 }
 
 export function chooseSendMode(offer, html) {
