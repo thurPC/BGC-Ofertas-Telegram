@@ -1,6 +1,7 @@
 import { logger } from '../logger.js';
 import { chooseSendMode, formatOfferHtml } from '../formatters/offer-message.js';
 import { OFFER_STATUS } from './offer-service.js';
+import { defaultTemplate, mergeTemplate } from './template-service.js';
 import { validateHttpUrl } from './validation-service.js';
 
 function isTelegramError(error) {
@@ -25,10 +26,19 @@ function publicError(error) {
 }
 
 export class PublishingService {
-  constructor({ bot, config, offerService }) {
+  constructor({ bot, config, offerService, templateService }) {
     this.bot = bot;
     this.config = config;
     this.offerService = offerService;
+    this.templateService = templateService;
+  }
+
+  async resolveTemplate() {
+    if (this.templateService?.get) return this.templateService.get();
+    return mergeTemplate({
+      ...defaultTemplate(),
+      channelLink: this.config?.channelLink || defaultTemplate().channelLink
+    });
   }
 
   canPublish(offer) {
@@ -40,14 +50,16 @@ export class PublishingService {
       if (offer.status === OFFER_STATUS.EXPIRED) return { ok: false, error: 'A oferta está expirada.' };
       if (offer.status === OFFER_STATUS.CANCELLED) return { ok: false, error: 'A oferta foi cancelada.' };
     }
-    if (!offer.name || offer.price == null || !offer.store) {
+    if (!offer.name || offer.price == null) {
       return { ok: false, error: 'A oferta ainda não está completa para publicação.' };
     }
     return { ok: true };
   }
 
   async sendToChat(chatId, offer) {
-    const html = formatOfferHtml(offer);
+    const template = await this.resolveTemplate();
+    const channelLink = template.channelLink || this.config?.channelLink || '';
+    const html = formatOfferHtml(offer, { template, channelLink });
     const mode = chooseSendMode(offer, html);
     const extra = {
       parse_mode: 'HTML',
@@ -79,12 +91,13 @@ export class PublishingService {
     const chatId = targetChatId || this.config.channelId;
     if (!chatId) return { ok: false, error: 'Canal de publicação não configurado.' };
 
+    const needsImageReview = !offer.imageUrl;
     try {
       const result = await this.sendToChat(chatId, offer);
       if (offer.id && this.offerService) {
         await this.offerService.markPublished(offer.id, { actorId });
       }
-      return { ...result, publishedTo: chatId };
+      return { ...result, publishedTo: chatId, needsImageReview };
     } catch (error) {
       logger.error('Erro ao publicar oferta.', error.message);
       return { ok: false, error: publicError(error) };
@@ -93,7 +106,8 @@ export class PublishingService {
 
   async preview(chatId, offer) {
     try {
-      return await this.sendToChat(chatId, offer);
+      const result = await this.sendToChat(chatId, offer);
+      return { ...result, needsImageReview: !offer.imageUrl };
     } catch (error) {
       logger.warn('Falha na prévia.', error.message);
       return { ok: false, error: publicError(error) };

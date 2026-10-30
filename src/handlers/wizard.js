@@ -111,11 +111,22 @@ function handleStep(step, text) {
   }
 }
 
-export function previewPayload(state) {
+export function previewPayload(state, options = {}) {
   return {
-    html: formatOfferPreview(state.data),
+    html: formatOfferPreview(state.data, options),
     keyboard: confirmPublishKeyboard(String(state.userId))
   };
+}
+
+export async function resolvePreviewOptions(ctx) {
+  const template = await ctx.templateService.get();
+  const channelLink = template.channelLink || ctx.config?.channelLink || '';
+  return { template, channelLink };
+}
+
+export function imageReviewNote(offer) {
+  if (offer?.imageUrl) return null;
+  return '⚠️ Sem imagem confirmada do produto. Revise antes de publicar: a publicação sai somente com texto.';
 }
 
 export const EDIT_FIELD_KEYBOARD = {

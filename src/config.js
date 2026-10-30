@@ -103,6 +103,7 @@ export function loadConfig(env = process.env) {
     dataDir,
     logLevel: trim(env.LOG_LEVEL) || 'info',
     feedUrl: trim(env.OFFER_FEED_URL),
+    channelLink: trim(env.BGC_CHANNEL_LINK),
     maxPrice: parseNumber(env.OFFER_MAX_PRICE),
     minDiscountPercent: parseNumber(env.OFFER_MIN_DISCOUNT_PERCENT),
     allowedStores: parseCsv(env.OFFER_ALLOWED_STORES).map((item) => item.toLowerCase()),

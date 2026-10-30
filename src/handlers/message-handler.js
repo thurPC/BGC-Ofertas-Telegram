@@ -6,7 +6,14 @@ import {
   formatStatus,
   offerActionKeyboard
 } from '../commands/admin.js';
-import { applyWizardInput, createWizardState, previewPayload, wizardPrompt } from './wizard.js';
+import {
+  applyWizardInput,
+  createWizardState,
+  imageReviewNote,
+  previewPayload,
+  resolvePreviewOptions,
+  wizardPrompt
+} from './wizard.js';
 import { logger } from '../logger.js';
 
 const SESSIONS = new Map();
@@ -53,8 +60,10 @@ export function registerMessageHandler(bot, ctx) {
       }
       setSession(userId, session);
       if (result.done) {
-        const preview = previewPayload(session);
-        await bot.sendMessage(msg.chat.id, preview.html, {
+        const options = await resolvePreviewOptions(ctx);
+        const preview = previewPayload(session, options);
+        const note = imageReviewNote(session.data);
+        await bot.sendMessage(msg.chat.id, note ? `${note}\n\n${preview.html}` : preview.html, {
           parse_mode: 'HTML',
           reply_markup: preview.keyboard,
           disable_web_page_preview: true
@@ -141,7 +150,10 @@ export function registerMessageHandler(bot, ctx) {
       await bot.sendMessage(msg.chat.id, result.error);
       return;
     }
-    await bot.sendMessage(msg.chat.id, 'Oferta publicada no canal.');
+    const note = result.needsImageReview
+      ? '\n⚠️ Esta oferta foi publicada sem imagem confirmada. Revise e reenvie com a imagem real se necessário.'
+      : '';
+    await bot.sendMessage(msg.chat.id, `Oferta publicada no canal.${note}`);
   });
 
   bot.onText(/^\/ver(?:@\w+)?(?:\s+(.+))?$/, async (msg, match) => {

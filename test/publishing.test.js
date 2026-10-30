@@ -5,6 +5,7 @@ import { PublishingService } from '../src/services/publishing-service.js';
 import { JsonFeedSource, createConfiguredSources } from '../src/sources/json-feed-source.js';
 import { applyOfferFilters } from '../src/sources/source-interface.js';
 import { SchedulerService } from '../src/services/scheduler-service.js';
+import { defaultTemplate } from '../src/services/template-service.js';
 
 const completeOffer = {
   name: 'Mouse Gamer <RGB>',
@@ -14,44 +15,66 @@ const completeOffer = {
   coupon: 'BGC10',
   couponConditions: 'Uma unidade por CPF',
   imageUrl: 'https://cdn.example.com/mouse.jpg',
-  url: 'https://loja.example.com/mouse',
+  url: 'https://loja.example.com/mouse?afiliado=bgc&utm_source=canal',
   store: 'Loja Gamer',
   status: 'pronta'
 };
 
-test('formata oferta com imagem e omite campos vazios', () => {
-  const html = formatOfferHtml(completeOffer);
-  assert.match(html, /Mouse Gamer &lt;RGB&gt;/);
-  assert.match(html, /Preço promocional: R\$ 149,90/);
-  assert.match(html, /De: R\$ 199,90/);
-  assert.match(html, /PIX: R\$ 139,90/);
-  assert.match(html, /Cupom: <code>BGC10<\/code>/);
-  assert.match(html, /Link de compra: https:\/\/loja\.example\.com\/mouse/);
-  assert.match(html, /Compartilhe com seus amigos!/);
-  assert.doesNotMatch(html, /COMPRAR AGORA/);
-  const withoutOptional = formatOfferHtml({
-    name: 'Teclado',
-    price: 90,
-    url: 'https://loja.example.com/teclado',
-    store: 'Loja'
-  });
-  assert.doesNotMatch(withoutOptional, /De:/);
-  assert.doesNotMatch(withoutOptional, /Cupom/);
-  assert.doesNotMatch(withoutOptional, /PIX:/);
-  assert.match(withoutOptional, /Link de compra: https:\/\/loja\.example\.com\/teclado/);
+function templateWithChannel(link = 'https://t.me/bgcpromos') {
+  const template = defaultTemplate();
+  template.channelLink = link;
+  return template;
+}
+
+test('renderiza o modelo obrigatório BGC PROMOS na ordem definida', () => {
+  const template = templateWithChannel();
+  const html = formatOfferHtml(completeOffer, { template, channelLink: template.channelLink });
+  const expected = [
+    '🔥 Mouse Gamer &lt;RGB&gt;',
+    '',
+    '💰 R$ 149,90',
+    '🎟️ Cupom: BGC10',
+    '',
+    '🔗 Link do produto:',
+    'https://loja.example.com/mouse?afiliado=bgc&amp;utm_source=canal',
+    '',
+    '👉 Compartilhe com os amigos:',
+    'https://t.me/bgcpromos'
+  ].join('\n');
+  assert.equal(html, expected);
+});
+
+test('omite campos opcionais e cupom quando não existem', () => {
+  const template = templateWithChannel();
+  const html = formatOfferHtml(
+    { name: 'Teclado', price: 90, url: 'https://loja.example.com/teclado', store: 'Loja' },
+    { template, channelLink: template.channelLink }
+  );
+  assert.doesNotMatch(html, /Cupom/);
+  assert.doesNotMatch(html, /De:/);
+  assert.doesNotMatch(html, /PIX:/);
+  assert.doesNotMatch(html, /Loja:/);
+  assert.match(html, /🔗 Link do produto:\nhttps:\/\/loja\.example\.com\/teclado/);
+  assert.match(html, /👉 Compartilhe com os amigos:\nhttps:\/\/t\.me\/bgcpromos/);
+});
+
+test('omite o bloco de compartilhamento quando o link do canal não está configurado', () => {
+  const template = defaultTemplate();
+  const html = formatOfferHtml(completeOffer, { template, channelLink: '' });
+  assert.doesNotMatch(html, /Compartilhe/);
+  assert.match(html, /🔗 Link do produto:/);
 });
 
 test('escolhe sendPhoto quando há imagem e sendMessage quando não há', () => {
-  const withImage = chooseSendMode(completeOffer, formatOfferHtml(completeOffer));
+  const template = templateWithChannel();
+  const withImage = chooseSendMode(completeOffer, formatOfferHtml(completeOffer, { template }));
   assert.equal(withImage.method, 'sendPhoto');
-  const noImage = chooseSendMode(
-    { name: 'X', price: 1, url: 'https://x.test', store: 'Y' },
-    formatOfferHtml({ name: 'X', price: 1, url: 'https://x.test', store: 'Y' })
-  );
+  const noImageOffer = { name: 'X', price: 1, url: 'https://x.test', store: 'Y' };
+  const noImage = chooseSendMode(noImageOffer, formatOfferHtml(noImageOffer, { template }));
   assert.equal(noImage.method, 'sendMessage');
 });
 
-test('publicação no canal não envia botões inline', async () => {
+test('publicação no canal não envia botões inline e usa o modelo com o link do canal', async () => {
   const sent = [];
   const bot = {
     async sendPhoto(chatId, photo, extra) {
@@ -63,10 +86,12 @@ test('publicação no canal não envia botões inline', async () => {
       return { message_id: 2 };
     }
   };
+  const templateService = { async get() { return templateWithChannel(); } };
   const service = new PublishingService({
     bot,
     config: { channelId: '-100123' },
-    offerService: { markPublished: async () => ({ ok: true }) }
+    offerService: { markPublished: async () => ({ ok: true }) },
+    templateService
   });
   const result = await service.publish(completeOffer, { actorId: 1 });
   assert.equal(result.ok, true);
@@ -74,8 +99,45 @@ test('publicação no canal não envia botões inline', async () => {
   assert.equal(sent[0].method, 'sendPhoto');
   assert.equal(sent[0].photo, completeOffer.imageUrl);
   assert.equal(sent[0].extra.reply_markup, undefined);
-  assert.match(sent[0].extra.caption, /Link de compra: https:\/\/loja\.example\.com\/mouse/);
-  assert.doesNotMatch(sent[0].extra.caption, /COMPRAR AGORA/);
+  assert.match(sent[0].extra.caption, /🔥 Mouse Gamer &lt;RGB&gt;/);
+  assert.match(sent[0].extra.caption, /💰 R\$ 149,90/);
+  assert.match(sent[0].extra.caption, /🎟️ Cupom: BGC10/);
+  assert.match(sent[0].extra.caption, /🔗 Link do produto:\nhttps:\/\/loja\.example\.com\/mouse\?afiliado=bgc&amp;utm_source=canal/);
+  assert.match(sent[0].extra.caption, /👉 Compartilhe com os amigos:\nhttps:\/\/t\.me\/bgcpromos/);
+});
+
+test('preserva integralmente o link de afiliado no texto publicado', async () => {
+  const sent = [];
+  const bot = {
+    async sendPhoto(chatId, photo, extra) {
+      sent.push({ extra });
+      return { message_id: 1 };
+    }
+  };
+  const service = new PublishingService({
+    bot,
+    config: { channelId: '-100123' },
+    offerService: { markPublished: async () => ({ ok: true }) },
+    templateService: { async get() { return templateWithChannel(); } }
+  });
+  const affiliate = 'https://www.mercadolivre.com.br/sec/abc?matt_word=teste&matt_tool=123';
+  await service.publish({ ...completeOffer, url: affiliate }, { actorId: 1 });
+  assert.match(sent[0].extra.caption, /matt_word=teste&amp;matt_tool=123/);
+});
+
+test('sinaliza revisão administrativa quando não há imagem do produto', async () => {
+  const service = new PublishingService({
+    bot: { async sendMessage() { return { message_id: 1 }; } },
+    config: { channelId: '-100123' },
+    offerService: { markPublished: async () => ({ ok: true }) },
+    templateService: { async get() { return templateWithChannel(); } }
+  });
+  const result = await service.publish(
+    { ...completeOffer, imageUrl: null },
+    { actorId: 1 }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.needsImageReview, true);
 });
 
 test('recusa publicação sem link válido', () => {

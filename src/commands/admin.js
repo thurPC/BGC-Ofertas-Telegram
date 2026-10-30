@@ -9,10 +9,12 @@ export const ADMIN_HELP_TEXT = [
   '/publicar — publica uma oferta pronta (informe o ID)',
   '/ofertas — lista ofertas cadastradas',
   '/status — estado operacional, sem dados sensíveis',
+  '/modelo — edita o modelo de publicação (texto, emojis, ordem, preço, link do canal)',
   '/ajuda_admin — esta mensagem',
   '',
   'Fluxo de cadastro: nome, preço atual, preço anterior (opcional), PIX (opcional), cupom e condições, imagem, link, loja e validade.',
   'Ao final há prévia. Só publica depois de confirmação explícita.',
+  'O modelo visual (BGC PROMOS) é editável com /modelo: texto, emojis, ordem dos campos, formato de preço, campos opcionais e o link do canal. É possível restaurar o padrão.',
   'A publicação no canal vai com foto (quando houver) e o link no texto, sem botões inline, para não interferir nos comentários do grupo de discussão.',
   '',
   'A busca automática lê o feed JSON em OFFER_FEED_URL. A publicação no canal permanece desativada por padrão (OFFER_AUTO_PUBLISH=false): o feed é consultado, mas nada entra no canal sem essa flag ou /publicar.'
@@ -29,6 +31,7 @@ export function adminKeyboard() {
         { text: '📊 Status', callback_data: 'admin:status' },
         { text: '🕘 Histórico', callback_data: 'admin:history' }
       ],
+      [{ text: '🎨 Modelo de publicação', callback_data: 'modelo:voltar' }],
       [{ text: '🆘 Ajuda admin', callback_data: 'admin:help' }]
     ]
   };
