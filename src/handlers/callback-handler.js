@@ -17,7 +17,9 @@ import {
 import {
   createWizardState,
   EDIT_FIELD_KEYBOARD,
+  imageReviewNote,
   previewPayload,
+  resolvePreviewOptions,
   wizardPrompt
 } from './wizard.js';
 import { logger } from '../logger.js';
@@ -116,7 +118,10 @@ export function registerCallbackHandler(bot, ctx) {
           return;
         }
         await safeAnswer(bot, query);
-        await bot.sendMessage(chatId, formatOfferPreview(offer), {
+        const options = await resolvePreviewOptions(ctx);
+        const note = imageReviewNote(offer);
+        const html = formatOfferPreview(offer, options);
+        await bot.sendMessage(chatId, note ? `${note}\n\n${html}` : html, {
           parse_mode: 'HTML',
           reply_markup: offerActionKeyboard(offer),
           disable_web_page_preview: true
@@ -145,8 +150,14 @@ export function registerCallbackHandler(bot, ctx) {
         }
         const result = await ctx.publishingService.publish(offer, { actorId: userId });
         await safeAnswer(bot, query, result.ok ? 'Publicada.' : result.error);
-        if (result.ok) await bot.sendMessage(chatId, 'Oferta publicada no canal.');
-        else await bot.sendMessage(chatId, result.error);
+        if (result.ok) {
+          const note = result.needsImageReview
+            ? '\n⚠️ Esta oferta foi publicada sem imagem confirmada. Revise e reenvie com a imagem real se necessário.'
+            : '';
+          await bot.sendMessage(chatId, `Oferta publicada no canal.${note}`);
+        } else {
+          await bot.sendMessage(chatId, result.error);
+        }
         return;
       }
 
@@ -207,9 +218,11 @@ async function handleWizardCallback(bot, ctx, query, data, userId, chatId) {
     session.step = 'preview';
     session.editingField = null;
     setSession(userId, session);
-    const preview = previewPayload(session);
+    const options = await resolvePreviewOptions(ctx);
+    const preview = previewPayload(session, options);
+    const note = imageReviewNote(session.data);
     await safeAnswer(bot, query);
-    await bot.sendMessage(chatId, preview.html, {
+    await bot.sendMessage(chatId, note ? `${note}\n\n${preview.html}` : preview.html, {
       parse_mode: 'HTML',
       reply_markup: preview.keyboard,
       disable_web_page_preview: true
@@ -312,6 +325,9 @@ async function handleWizardCallback(bot, ctx, query, data, userId, chatId) {
     }
     clearSession(userId);
     await safeAnswer(bot, query, 'Publicada.');
-    await bot.sendMessage(chatId, 'Oferta publicada no canal.');
+    const note = result.needsImageReview
+      ? '\n⚠️ Esta oferta foi publicada sem imagem confirmada. Revise e reenvie com a imagem real se necessário.'
+      : '';
+    await bot.sendMessage(chatId, `Oferta publicada no canal.${note}`);
   }
 }

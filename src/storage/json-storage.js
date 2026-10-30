@@ -7,7 +7,8 @@ const DEFAULT_DB = {
   offers: [],
   history: [],
   settings: {
-    autoPublishEnabled: false
+    autoPublishEnabled: false,
+    template: null
   }
 };
 
@@ -92,7 +93,8 @@ export class JsonStorage {
       offers: Array.isArray(data.offers) ? data.offers : [],
       history: Array.isArray(data.history) ? data.history : [],
       settings: {
-        autoPublishEnabled: Boolean(data.settings?.autoPublishEnabled)
+        autoPublishEnabled: Boolean(data.settings?.autoPublishEnabled),
+        template: data.settings?.template ?? null
       }
     };
   }

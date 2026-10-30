@@ -8,9 +8,11 @@ import { logger } from './src/logger.js';
 import { registerPublicCommands } from './src/commands/public.js';
 import { registerMessageHandler } from './src/handlers/message-handler.js';
 import { registerCallbackHandler } from './src/handlers/callback-handler.js';
+import { registerTemplateCallbacks, registerTemplateCommand } from './src/commands/template.js';
 import { OfferService } from './src/services/offer-service.js';
 import { PublishingService } from './src/services/publishing-service.js';
 import { SchedulerService } from './src/services/scheduler-service.js';
+import { TemplateService } from './src/services/template-service.js';
 import { JsonStorage } from './src/storage/json-storage.js';
 import { createConfiguredSources } from './src/sources/json-feed-source.js';
 import { InstanceLock } from './src/process-lock.js';
@@ -82,8 +84,9 @@ async function main() {
   await storage.init();
 
   const offerService = new OfferService(storage);
+  const templateService = new TemplateService(storage);
   bot = createBot(config.token, { polling: true });
-  const publishingService = new PublishingService({ bot, config, offerService });
+  const publishingService = new PublishingService({ bot, config, offerService, templateService });
   const sources = createConfiguredSources(config);
   scheduler = new SchedulerService({
     config,
@@ -92,16 +95,19 @@ async function main() {
     publishingService
   });
 
-  const ctx = { config, offerService, publishingService, scheduler };
+  const ctx = { config, offerService, publishingService, scheduler, templateService };
 
   registerPublicCommands(bot);
   registerMessageHandler(bot, ctx);
   registerCallbackHandler(bot, ctx);
+  registerTemplateCommand(bot, ctx);
+  registerTemplateCallbacks(bot, ctx);
 
   await bot.setMyCommands([
     { command: 'start', description: 'Apresentação do BGC Ofertas' },
     { command: 'ajuda', description: 'Lista de comandos' },
-    { command: 'sobre', description: 'Sobre o BGC Ofertas' }
+    { command: 'sobre', description: 'Sobre o BGC Ofertas' },
+    { command: 'modelo', description: 'Modelo de publicação (equipe)' }
   ]);
 
   scheduler.start();
