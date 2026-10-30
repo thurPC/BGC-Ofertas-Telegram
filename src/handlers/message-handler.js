@@ -20,7 +20,8 @@ import {
   analyzeLink,
   extractionSummary,
   invalidLinkMessage,
-  missingFieldsMessage
+  missingFieldsMessage,
+  missingFieldsPrompt
 } from '../services/offer-automation.js';
 import { logger } from '../logger.js';
 
@@ -69,7 +70,7 @@ export async function handleOfferLink(bot, ctx, chatId, userId, link) {
   const missing = missingRequiredFields(session.data);
   if (missing.length) {
     await bot.sendMessage(chatId, missingFieldsMessage(missing), { parse_mode: 'HTML' });
-    await bot.sendMessage(chatId, wizardPrompt(session.step), { parse_mode: 'HTML' });
+    await bot.sendMessage(chatId, missingFieldsPrompt(missing), { parse_mode: 'HTML' });
     return { ok: true, pending: true, missing };
   }
 

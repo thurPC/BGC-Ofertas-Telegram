@@ -26,13 +26,137 @@ export const PLATFORMS = [
   {
     id: 'amazon',
     name: 'Amazon',
-    hosts: ['amazon.com.br', 'amazon.com', 'amzn.to', 'amzn.com.br', 'a.co']
+    hosts: ['amazon.com.br', 'amazon.com', 'amzn.to', 'amzn.com', 'amzn.com.br', 'a.co', 'link.amazon']
   }
 ];
+
+// Marketplaces da Amazon identificados pelo domínio final resolvido.
+const AMAZON_MARKETPLACES = [
+  ['amazon.com.br', 'Amazon Brasil'],
+  ['amzn.com.br', 'Amazon Brasil'],
+  ['amazon.com', 'Amazon'],
+  ['amzn.to', 'Amazon'],
+  ['amzn.com', 'Amazon'],
+  ['a.co', 'Amazon'],
+  ['link.amazon', 'Amazon']
+];
+
+// Nomes que são marca/domínio, nunca título de produto.
+const MARKETPLACE_BRANDS = new Set([
+  'amazon',
+  'amazon brasil',
+  'amazon.com',
+  'amazon.com.br',
+  'amzn',
+  'amzn.to',
+  'amzn.com',
+  'shopee',
+  'mercado livre',
+  'mercado libre',
+  'mercadolivre',
+  'mercadolibre',
+  'mercadoliv.re'
+]);
+
+// Plataformas cujo preço só pode ser exibido a partir de fonte autorizada (API oficial).
+const AUTHORIZED_PRICE_PLATFORMS = new Set(['amazon']);
 
 function hostMatches(host, candidates) {
   const value = String(host || '').toLowerCase();
   return candidates.some((candidate) => value === candidate || value.endsWith(`.${candidate}`));
+}
+
+export function hostOf(url) {
+  try {
+    return new URL(String(url)).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return null;
+  }
+}
+
+export function requiresAuthorizedPrice(platformId) {
+  return AUTHORIZED_PRICE_PLATFORMS.has(String(platformId || '').toLowerCase());
+}
+
+// Impede que o domínio do encurtador/loja seja usado como título do produto.
+export function isDomainLikeTitle(title, { host, siteName } = {}) {
+  const value = String(title ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/^www\./, '');
+  if (!value) return true;
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(value)) return true;
+  if (MARKETPLACE_BRANDS.has(value)) return true;
+  const normalizedHost = String(host ?? '').toLowerCase().replace(/^www\./, '');
+  if (normalizedHost && (value === normalizedHost || value.endsWith(`.${normalizedHost}`))) return true;
+  const normalizedSite = String(siteName ?? '').trim().toLowerCase();
+  if (normalizedSite && value === normalizedSite && MARKETPLACE_BRANDS.has(value)) return true;
+  return false;
+}
+
+export function resolveStoreFromUrl(url, platform) {
+  const host = hostOf(url);
+  if (!host) return platform?.name || null;
+  const isAmazon = platform?.id === 'amazon' || hostMatches(host, AMAZON_MARKETPLACES.map(([candidate]) => candidate));
+  if (isAmazon) {
+    for (const [candidate, store] of AMAZON_MARKETPLACES) {
+      if (hostMatches(host, [candidate])) return store;
+    }
+    return 'Amazon';
+  }
+  return platform?.name || null;
+}
+
+const ASIN_PATTERNS = [
+  /\/(?:dp|gp\/product|gp\/aw\/d|product|d)\/([A-Z0-9]{10})(?:[/?]|$)/i,
+  /[?&]asin=([A-Z0-9]{10})(?:&|$)/i,
+  /\/([A-Z0-9]{10})(?:[/?]|$)/
+];
+
+export function extractAsin(url) {
+  const source = String(url ?? '');
+  for (const pattern of ASIN_PATTERNS) {
+    const match = source.match(pattern);
+    if (match) return match[1].toUpperCase();
+  }
+  return null;
+}
+
+// Extrai um destino de produto a partir de páginas intermediárias (canonical, og:url ou meta refresh).
+export function findCanonicalProductUrl(html, baseUrl) {
+  const source = String(html ?? '');
+  const candidates = [];
+
+  const canonical = source.match(/<link\b[^>]*>/gi)?.find((tag) => /rel=["']?canonical["']?/i.test(tag));
+  if (canonical) {
+    const href = parseAttributes(canonical).href;
+    if (href) candidates.push(href);
+  }
+
+  const ogUrl = collectMetaTags(source)['og:url'];
+  if (ogUrl) candidates.push(ogUrl);
+
+  const refresh = source.match(/<meta\b[^>]*>/gi)?.find((tag) => /http-equiv=["']?refresh["']?/i.test(tag));
+  if (refresh) {
+    const content = parseAttributes(refresh).content || '';
+    const match = content.match(/url=([^;]+)/i);
+    if (match) candidates.push(match[1].trim().replace(/^["']|["']$/g, ''));
+  }
+
+  for (const candidate of candidates) {
+    const absolute = absoluteUrl(candidate, baseUrl);
+    if (!absolute || absolute === String(baseUrl)) continue;
+    try {
+      const parsed = new URL(absolute);
+      if (!['http:', 'https:'].includes(parsed.protocol)) continue;
+    } catch {
+      continue;
+    }
+    return absolute;
+  }
+  return null;
 }
 
 export function detectPlatform(url) {
@@ -338,8 +462,12 @@ export function extractFromHtml(html, baseUrl, platform = {}) {
   const meta = collectMetaTags(html);
   const product = findProductNode(flattenNodes(collectJsonLd(html)));
   const text = stripTags(html);
+  const host = hostOf(baseUrl);
 
-  const name = firstNonNull(meta['og:title'], meta['twitter:title'], product?.name, htmlTitle(html));
+  const candidates = [meta['og:title'], meta['twitter:title'], product?.name, htmlTitle(html)];
+  const name = candidates.find(
+    (candidate) => candidate != null && !isDomainLikeTitle(candidate, { host, siteName: meta['og:site_name'] })
+  ) || null;
 
   const metaPrice = toMoney(firstNonNull(meta['product:price:amount'], meta['og:price:amount'], meta['twitter:data1']));
   const textPrice = findPriceInText(text);
@@ -354,7 +482,11 @@ export function extractFromHtml(html, baseUrl, platform = {}) {
   const rawImage = firstNonNull(meta['og:image'], meta['og:image:secure_url'], meta['twitter:image'], jsonLdImage(product));
   const imageUrl = absoluteUrl(rawImage, baseUrl);
 
-  const store = firstNonNull(platform?.name, meta['og:site_name'], jsonLdStore(product));
+  const store = resolveStoreFromUrl(baseUrl, platform)
+    || (isDomainLikeTitle(meta['og:site_name'], { host }) ? null : meta['og:site_name'])
+    || jsonLdStore(product)
+    || platform?.name
+    || null;
 
   const coupon = findCoupon(text);
 
@@ -364,7 +496,8 @@ export function extractFromHtml(html, baseUrl, platform = {}) {
     previousPrice: previousPrice ?? null,
     imageUrl,
     store: store ? String(store).trim().slice(0, 80) : null,
-    coupon: coupon || null
+    coupon: coupon || null,
+    asin: extractAsin(baseUrl)
   };
 }
 
@@ -450,17 +583,51 @@ export async function extractOfferFromLink(rawUrl, options = {}) {
     return { ok: false, error: 'A página retornou conteúdo vazio.', reason: 'empty', platform };
   }
 
-  const data = extractFromHtml(String(html).slice(0, MAX_HTML_CHARS), finalUrl, platform);
+  // Encurtadores da Amazon às vezes devolvem uma página intermediária; seguimos o
+  // destino canônico (canonical/og:url/meta refresh) para ler os metadados do produto.
+  let resolvedUrl = finalUrl;
+  let body = String(html).slice(0, MAX_HTML_CHARS);
+  let probe = extractFromHtml(body, resolvedUrl, platform);
+  const needsProductPage = !probe.name || !extractAsin(resolvedUrl);
+  if (needsProductPage) {
+    const canonical = findCanonicalProductUrl(body, resolvedUrl);
+    if (canonical && canonical !== resolvedUrl) {
+      const follow = await safeFetch(canonical, options);
+      if (follow.ok && (follow.response?.ok ?? true)) {
+        const followHtml = await follow.response.text().catch(() => '');
+        if (String(followHtml || '').trim()) {
+          resolvedUrl = follow.finalUrl;
+          body = String(followHtml).slice(0, MAX_HTML_CHARS);
+          probe = extractFromHtml(body, resolvedUrl, platform);
+        }
+      }
+    }
+  }
+
+  const data = probe;
+  const asin = extractAsin(resolvedUrl) || data.asin || null;
+  const store = data.store || resolveStoreFromUrl(resolvedUrl, platform);
+
+  // Regras do Amazon Associados: sem integração autorizada, o preço não é
+  // apresentado como oficial. Nessas plataformas ele é descartado e solicitado ao admin.
+  const priceGated = requiresAuthorizedPrice(platform?.id) && !options.authorizedPriceProvider;
+  if (priceGated) {
+    data.price = null;
+    data.previousPrice = null;
+  }
 
   const warnings = [];
   if (!data.imageUrl) warnings.push('image-missing');
   if (!data.coupon) warnings.push('coupon-missing');
   if (data.price == null) warnings.push('price-missing');
+  if (priceGated) warnings.push('price-authorized-only');
 
-  const offer = { ...data, url };
+  // O link original (afiliado) é sempre o publicado; o resolvido serve apenas para consulta.
+  const offer = { ...data, store, asin, url, originalAffiliateUrl: url, resolvedProductUrl: resolvedUrl };
   const missing = [];
   if (!offer.name) missing.push('name');
   if (offer.price == null) missing.push('price');
+  if (!offer.store) missing.push('store');
 
-  return { ok: true, offer, platform, finalUrl, missing, warnings };
+  return { ok: true, offer, platform, finalUrl: resolvedUrl, missing, warnings };
 }
