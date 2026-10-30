@@ -50,6 +50,33 @@ export function wizardPrompt(step) {
   return PROMPTS[step] || 'Continue o cadastro.';
 }
 
+export function missingRequiredFields(data = {}) {
+  const missing = [];
+  if (!data.name) missing.push('name');
+  if (data.price == null) missing.push('price');
+  if (!data.store) missing.push('store');
+  return missing;
+}
+
+// Sessão criada a partir da extração automática: pergunta somente os campos
+// obrigatórios ausentes, sem reiniciar o cadastro guiado inteiro.
+export function createExtractionSession(userId, data = {}) {
+  const collect = missingRequiredFields(data);
+  return {
+    userId,
+    step: collect[0] || 'preview',
+    data: { ...data },
+    editingField: null,
+    collect,
+    autoExtracted: true,
+    createdAt: Date.now()
+  };
+}
+
+function wizardSequence(state) {
+  return Array.isArray(state.collect) && state.collect.length ? state.collect : WIZARD_STEPS;
+}
+
 export function applyWizardInput(state, text) {
   const step = state.editingField || state.step;
   const result = handleStep(step, text);
@@ -72,8 +99,9 @@ export function applyWizardInput(state, text) {
     return { ok: true, done: true };
   }
 
-  const index = WIZARD_STEPS.indexOf(state.step);
-  const next = WIZARD_STEPS[index + 1];
+  const sequence = wizardSequence(state);
+  const index = sequence.indexOf(state.step);
+  const next = index === -1 ? sequence[0] : sequence[index + 1] ?? 'preview';
   state.step = next;
   return { ok: true, done: next === 'preview', next };
 }

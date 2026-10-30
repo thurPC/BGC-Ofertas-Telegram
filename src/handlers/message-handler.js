@@ -8,16 +8,74 @@ import {
 } from '../commands/admin.js';
 import {
   applyWizardInput,
+  createExtractionSession,
   createWizardState,
   imageReviewNote,
+  missingRequiredFields,
   previewPayload,
   resolvePreviewOptions,
   wizardPrompt
 } from './wizard.js';
+import {
+  analyzeLink,
+  extractionSummary,
+  invalidLinkMessage,
+  missingFieldsMessage
+} from '../services/offer-automation.js';
 import { logger } from '../logger.js';
 
 const SESSIONS = new Map();
 const SESSION_TTL_MS = 30 * 60 * 1000;
+const URL_ONLY_PATTERN = /^(https?:\/\/\S+)$/i;
+
+export function extractLinkFromText(text) {
+  const match = String(text ?? '').trim().match(URL_ONLY_PATTERN);
+  return match ? match[1] : null;
+}
+
+async function showPreview(bot, ctx, chatId, session) {
+  const options = await resolvePreviewOptions(ctx);
+  const preview = previewPayload(session, options);
+  const note = imageReviewNote(session.data);
+  await bot.sendMessage(chatId, note ? `${note}\n\n${preview.html}` : preview.html, {
+    parse_mode: 'HTML',
+    reply_markup: preview.keyboard,
+    disable_web_page_preview: true
+  });
+}
+
+export async function handleOfferLink(bot, ctx, chatId, userId, link) {
+  await bot.sendMessage(chatId, '🔎 Analisando o link…');
+  const analysis = await analyzeLink(link, ctx.linkOptions || {});
+
+  if (!analysis.ok) {
+    logger.warn('Falha na extração automática do link.', analysis.reason || analysis.error);
+    await bot.sendMessage(
+      chatId,
+      `${invalidLinkMessage()}\n\nDetalhe: ${analysis.error || 'falha na extração'}`,
+      { parse_mode: 'HTML', disable_web_page_preview: true }
+    );
+    return { ok: false };
+  }
+
+  const session = createExtractionSession(userId, analysis.offer);
+  setSession(userId, session);
+
+  await bot.sendMessage(chatId, extractionSummary(analysis), {
+    parse_mode: 'HTML',
+    disable_web_page_preview: true
+  });
+
+  const missing = missingRequiredFields(session.data);
+  if (missing.length) {
+    await bot.sendMessage(chatId, missingFieldsMessage(missing), { parse_mode: 'HTML' });
+    await bot.sendMessage(chatId, wizardPrompt(session.step), { parse_mode: 'HTML' });
+    return { ok: true, pending: true, missing };
+  }
+
+  await showPreview(bot, ctx, chatId, session);
+  return { ok: true, pending: false };
+}
 
 export function getSession(userId) {
   const session = SESSIONS.get(String(userId));
@@ -51,7 +109,25 @@ export function registerMessageHandler(bot, ctx) {
       if (!isAdmin(ctx.config, userId)) return;
 
       const session = getSession(userId);
-      if (!session) return;
+
+      // Sem sessão ativa: um link isolado inicia o cadastro automático.
+      if (!session) {
+        const link = extractLinkFromText(msg.text || '');
+        if (link) await handleOfferLink(bot, ctx, msg.chat.id, userId, link);
+        return;
+      }
+
+      // Durante a coleta de campos ausentes, um link preenche a URL do produto.
+      const activeStep = session.editingField || session.step;
+      const pastedLink = extractLinkFromText(msg.text || '');
+      if (pastedLink && ['url', 'imageUrl'].includes(activeStep)) {
+        session.data[activeStep] = pastedLink;
+        session.editingField = null;
+        session.step = 'preview';
+        setSession(userId, session);
+        await showPreview(bot, ctx, msg.chat.id, session);
+        return;
+      }
 
       const result = applyWizardInput(session, msg.text || '');
       if (!result.ok) {
@@ -60,14 +136,7 @@ export function registerMessageHandler(bot, ctx) {
       }
       setSession(userId, session);
       if (result.done) {
-        const options = await resolvePreviewOptions(ctx);
-        const preview = previewPayload(session, options);
-        const note = imageReviewNote(session.data);
-        await bot.sendMessage(msg.chat.id, note ? `${note}\n\n${preview.html}` : preview.html, {
-          parse_mode: 'HTML',
-          reply_markup: preview.keyboard,
-          disable_web_page_preview: true
-        });
+        await showPreview(bot, ctx, msg.chat.id, session);
         return;
       }
       await bot.sendMessage(msg.chat.id, wizardPrompt(session.step), { parse_mode: 'HTML' });
@@ -90,13 +159,26 @@ export function registerMessageHandler(bot, ctx) {
     await bot.sendMessage(msg.chat.id, ADMIN_HELP_TEXT, { parse_mode: 'HTML' });
   });
 
-  bot.onText(/^\/novaoferta(?:@\w+)?(?:\s|$)/, async (msg) => {
+  bot.onText(/^\/novaoferta(?:@\w+)?(?:\s+([\s\S]+))?$/, async (msg, match) => {
     if (!isAdmin(ctx.config, msg.from?.id)) return denyAdmin(bot, msg.chat.id);
+    const argument = String(match?.[1] || '').trim();
+    const link = extractLinkFromText(argument);
+    if (link) {
+      await handleOfferLink(bot, ctx, msg.chat.id, msg.from.id, link);
+      return;
+    }
+    if (argument) {
+      await bot.sendMessage(
+        msg.chat.id,
+        'Não reconheci um link válido. Envie um link http/https ou use /novaoferta sem argumento para o cadastro guiado.'
+      );
+      return;
+    }
     const session = createWizardState(msg.from.id);
     setSession(msg.from.id, session);
     await bot.sendMessage(
       msg.chat.id,
-      `🆕 Cadastro guiado iniciado.\nUse /cancelar para abortar.\n\n${wizardPrompt('name')}`,
+      `🆕 Cadastro guiado iniciado.\nEnvie o link do produto para o cadastro automático, ou preencha manualmente.\nUse /cancelar para abortar.\n\n${wizardPrompt('name')}`,
       { parse_mode: 'HTML' }
     );
   });
