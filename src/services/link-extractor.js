@@ -21,7 +21,7 @@ export const PLATFORMS = [
   {
     id: 'mercadolivre',
     name: 'Mercado Livre',
-    hosts: ['mercadolivre.com.br', 'mercadolibre.com.br', 'mercadolibre.com', 'mercadoliv.re']
+    hosts: ['mercadolivre.com.br', 'mercadolibre.com.br', 'mercadolibre.com', 'mercadoliv.re', 'meli.la', 'mercadolivre.com']
   },
   {
     id: 'amazon',

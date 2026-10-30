@@ -91,7 +91,7 @@ export class PublishingService {
     const chatId = targetChatId || this.config.channelId;
     if (!chatId) return { ok: false, error: 'Canal de publicação não configurado.' };
 
-    const needsImageReview = !offer.imageUrl;
+    const needsImageReview = !offer.imageUrl && !offer.imageFileId;
     try {
       const result = await this.sendToChat(chatId, offer);
       if (offer.id && this.offerService) {
@@ -107,7 +107,7 @@ export class PublishingService {
   async preview(chatId, offer) {
     try {
       const result = await this.sendToChat(chatId, offer);
-      return { ...result, needsImageReview: !offer.imageUrl };
+      return { ...result, needsImageReview: !offer.imageUrl && !offer.imageFileId };
     } catch (error) {
       logger.warn('Falha na prévia.', error.message);
       return { ok: false, error: publicError(error) };

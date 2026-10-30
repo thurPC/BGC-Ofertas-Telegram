@@ -184,6 +184,12 @@ export function validateOfferInput(input, { partial = false } = {}) {
   if (!image.ok) errors.push(image.error);
   else offer.imageUrl = image.value;
 
+  // file_id da foto enviada pelo Telegram: permite publicar a imagem real sem
+  // gravar o link com token do bot nem exigir uma URL pública.
+  const imageFileId = validateOptionalText(input.imageFileId, { max: 256 });
+  if (!imageFileId.ok) errors.push(imageFileId.error);
+  else offer.imageFileId = imageFileId.value;
+
   const url = validateHttpUrl(input.url, { required: !partial });
   if (!url.ok) {
     if (!partial || input.url !== undefined) errors.push(url.error);

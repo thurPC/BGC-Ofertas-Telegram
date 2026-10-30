@@ -153,7 +153,7 @@ export async function resolvePreviewOptions(ctx) {
 }
 
 export function imageReviewNote(offer) {
-  if (offer?.imageUrl) return null;
+  if (offer?.imageUrl || offer?.imageFileId) return null;
   return '⚠️ Sem imagem confirmada do produto. Revise antes de publicar: a publicação sai somente com texto.';
 }
 

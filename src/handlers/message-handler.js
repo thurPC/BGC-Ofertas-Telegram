@@ -18,10 +18,14 @@ import {
 } from './wizard.js';
 import {
   analyzeLink,
+  blockedMessage,
   extractionSummary,
+  imageMissingPrompt,
   invalidLinkMessage,
   missingFieldsMessage,
-  missingFieldsPrompt
+  missingFieldsPrompt,
+  nonProductMessage,
+  PAGE_TYPES
 } from '../services/offer-automation.js';
 import { logger } from '../logger.js';
 
@@ -32,6 +36,16 @@ const URL_ONLY_PATTERN = /^(https?:\/\/\S+)$/i;
 export function extractLinkFromText(text) {
   const match = String(text ?? '').trim().match(URL_ONLY_PATTERN);
   return match ? match[1] : null;
+}
+
+// O Telegram entrega a foto em vários tamanhos; usamos o maior disponível.
+export function pickLargestPhoto(photos) {
+  if (!Array.isArray(photos) || !photos.length) return null;
+  return photos.reduce((best, current) => {
+    const bestSize = Number(best?.file_size || 0);
+    const currentSize = Number(current?.file_size || 0);
+    return currentSize >= bestSize ? current : best;
+  });
 }
 
 async function showPreview(bot, ctx, chatId, session) {
@@ -45,21 +59,11 @@ async function showPreview(bot, ctx, chatId, session) {
   });
 }
 
-export async function handleOfferLink(bot, ctx, chatId, userId, link) {
-  await bot.sendMessage(chatId, '🔎 Analisando o link…');
-  const analysis = await analyzeLink(link, ctx.linkOptions || {});
-
-  if (!analysis.ok) {
-    logger.warn('Falha na extração automática do link.', analysis.reason || analysis.error);
-    await bot.sendMessage(
-      chatId,
-      `${invalidLinkMessage()}\n\nDetalhe: ${analysis.error || 'falha na extração'}`,
-      { parse_mode: 'HTML', disable_web_page_preview: true }
-    );
-    return { ok: false };
-  }
-
+// Aplica o resultado padronizado do resolver à sessão de cadastro.
+async function applyAnalysis(bot, ctx, chatId, userId, analysis) {
   const session = createExtractionSession(userId, analysis.offer);
+  session.pageType = analysis.pageType;
+  session.confidence = analysis.confidence || {};
   setSession(userId, session);
 
   await bot.sendMessage(chatId, extractionSummary(analysis), {
@@ -74,8 +78,41 @@ export async function handleOfferLink(bot, ctx, chatId, userId, link) {
     return { ok: true, pending: true, missing };
   }
 
+  if (!session.data.imageUrl && !session.data.imageFileId) {
+    session.awaitingImage = true;
+    setSession(userId, session);
+    await bot.sendMessage(chatId, imageMissingPrompt(), { parse_mode: 'HTML' });
+    return { ok: true, pending: true, missing: [], awaitingImage: true };
+  }
+
   await showPreview(bot, ctx, chatId, session);
   return { ok: true, pending: false };
+}
+
+export async function handleOfferLink(bot, ctx, chatId, userId, link) {
+  await bot.sendMessage(chatId, '🔎 Analisando o link…');
+  const analysis = await analyzeLink(link, ctx.linkOptions || {});
+
+  // Fonte bloqueada (403/429/5xx/timeout): reportamos o motivo, nunca inventamos dados.
+  if (!analysis.ok && analysis.status && analysis.status !== 'OK') {
+    logger.warn('Fonte indisponível na extração do link.', analysis.status);
+    await bot.sendMessage(chatId, blockedMessage(analysis), { parse_mode: 'HTML', disable_web_page_preview: true });
+    return { ok: false, blocked: true, status: analysis.status };
+  }
+
+  if (!analysis.ok) {
+    logger.warn('Falha na extração automática do link.', analysis.error || analysis.status);
+    await bot.sendMessage(chatId, invalidLinkMessage(), { parse_mode: 'HTML', disable_web_page_preview: true });
+    return { ok: false };
+  }
+
+  // Página que não é produto individual (cupons, campanha, loja, categoria).
+  if (analysis.pageType && analysis.pageType !== PAGE_TYPES.PRODUCT) {
+    await bot.sendMessage(chatId, nonProductMessage(analysis), { parse_mode: 'HTML', disable_web_page_preview: true });
+    return { ok: false, nonProduct: true, pageType: analysis.pageType };
+  }
+
+  return applyAnalysis(bot, ctx, chatId, userId, analysis);
 }
 
 export function getSession(userId) {
@@ -111,6 +148,35 @@ export function registerMessageHandler(bot, ctx) {
 
       const session = getSession(userId);
 
+      // Foto enviada pelo administrador: associada ao cadastro pendente.
+      const photo = pickLargestPhoto(msg.photo);
+      if (photo) {
+        if (!session) {
+          await bot.sendMessage(msg.chat.id, 'Envie primeiro o link do produto para eu associar a imagem.');
+          return;
+        }
+        try {
+          session.data.imageFileId = photo.file_id;
+          session.data.imageUrl = null;
+          session.awaitingImage = false;
+          session.editingField = null;
+          if (session.step === 'imageUrl') session.step = 'preview';
+          setSession(userId, session);
+          await bot.sendMessage(msg.chat.id, '🖼️ Imagem do produto associada ao cadastro.');
+        } catch (error) {
+          logger.warn('Falha ao associar a imagem enviada.', error.message);
+          await bot.sendMessage(msg.chat.id, 'Não foi possível usar essa imagem. Envie novamente ou informe uma URL http/https.');
+          return;
+        }
+        const missing = missingRequiredFields(session.data);
+        if (missing.length) {
+          await bot.sendMessage(msg.chat.id, missingFieldsPrompt(missing), { parse_mode: 'HTML' });
+          return;
+        }
+        await showPreview(bot, ctx, msg.chat.id, session);
+        return;
+      }
+
       // Sem sessão ativa: um link isolado inicia o cadastro automático.
       if (!session) {
         const link = extractLinkFromText(msg.text || '');
@@ -130,6 +196,19 @@ export function registerMessageHandler(bot, ctx) {
         return;
       }
 
+      // Aguardando imagem: qualquer texto que não seja link é interpretado como "seguir sem imagem".
+      if (session.awaitingImage && !pastedLink) {
+        const missing = missingRequiredFields(session.data);
+        if (missing.length) {
+          await bot.sendMessage(msg.chat.id, missingFieldsPrompt(missing), { parse_mode: 'HTML' });
+          return;
+        }
+        session.awaitingImage = false;
+        setSession(userId, session);
+        await showPreview(bot, ctx, msg.chat.id, session);
+        return;
+      }
+
       const result = applyWizardInput(session, msg.text || '');
       if (!result.ok) {
         await bot.sendMessage(msg.chat.id, result.error || 'Valor inválido. Tente novamente.');
@@ -137,6 +216,12 @@ export function registerMessageHandler(bot, ctx) {
       }
       setSession(userId, session);
       if (result.done) {
+        if (!session.data.imageUrl && !session.data.imageFileId) {
+          session.awaitingImage = true;
+          setSession(userId, session);
+          await bot.sendMessage(msg.chat.id, imageMissingPrompt(), { parse_mode: 'HTML' });
+          return;
+        }
         await showPreview(bot, ctx, msg.chat.id, session);
         return;
       }

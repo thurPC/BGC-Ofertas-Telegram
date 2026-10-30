@@ -8,15 +8,16 @@ export function formatOfferHtml(offer, options = {}) {
 }
 
 export function chooseSendMode(offer, html) {
-  const hasImage = Boolean(offer.imageUrl);
+  const photo = offer.imageUrl || offer.imageFileId || null;
+  const hasImage = Boolean(photo);
   if (hasImage && telegramCaptionLimitOk(html)) {
-    return { method: 'sendPhoto', text: html, photo: offer.imageUrl };
+    return { method: 'sendPhoto', text: html, photo };
   }
   if (!telegramMessageLimitOk(html)) {
     const truncated = `${html.slice(0, 4000)}\n…`;
     return { method: 'sendMessage', text: truncated, photo: null, truncated: true };
   }
-  return { method: 'sendMessage', text: html, photo: hasImage ? offer.imageUrl : null };
+  return { method: 'sendMessage', text: html, photo: hasImage ? photo : null };
 }
 
 export function formatOfferPreview(offer, options = {}) {
