@@ -31,7 +31,8 @@ test('publicação automática permanece desativada por padrão', () => {
     TELEGRAM_CHANNEL_ID: '-100',
     ADMIN_IDS: '1'
   });
-  assert.equal(config.autoPublish, false);
-  assert.equal(config.checkIntervalMinutes, 60);
-  assert.equal(config.maxOffersPerRun, 5);
-});
+    assert.equal(config.autoPublish, false);
+    assert.equal(config.checkIntervalMinutes, 30);
+    assert.equal(config.maxOffersPerRun, 3);
+    assert.equal(config.requireAffiliateLink, true);
+  });

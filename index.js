@@ -16,6 +16,8 @@ import { TemplateService } from './src/services/template-service.js';
 import { JsonStorage } from './src/storage/json-storage.js';
 import { createConfiguredSources } from './src/sources/json-feed-source.js';
 import { InstanceLock } from './src/process-lock.js';
+import { createShopeeAffiliateClient } from './src/services/shopee-affiliate-client.js';
+import { evaluateReadiness } from './src/services/readiness-service.js';
 
 dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
 
@@ -87,7 +89,8 @@ async function main() {
   const templateService = new TemplateService(storage);
   bot = createBot(config.token, { polling: true });
   const publishingService = new PublishingService({ bot, config, offerService, templateService });
-  const sources = createConfiguredSources(config);
+  const shopeeClient = createShopeeAffiliateClient(config);
+  const sources = createConfiguredSources(config, { shopeeClient });
   scheduler = new SchedulerService({
     config,
     sources,
@@ -95,7 +98,8 @@ async function main() {
     publishingService
   });
 
-  const ctx = { config, offerService, publishingService, scheduler, templateService };
+  const linkOptions = { shopeeClient };
+  const ctx = { config, offerService, publishingService, scheduler, templateService, linkOptions };
 
   registerPublicCommands(bot);
   registerMessageHandler(bot, ctx);
@@ -117,6 +121,10 @@ async function main() {
   }
   if (!config.autoPublish) {
     logger.info('Publicação automática desativada (OFFER_AUTO_PUBLISH=false).');
+  }
+  const readiness = evaluateReadiness(config);
+  if (!readiness.ok) {
+    logger.warn(`Verificação de prontidão: ${readiness.blockers.join(' ')}`);
   }
 
   registerShutdownHandlers();

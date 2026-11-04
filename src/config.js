@@ -87,9 +87,22 @@ export function loadConfig(env = process.env) {
   if (!channelId) missing.push('TELEGRAM_CHANNEL_ID');
   if (adminIds.length === 0) missing.push('ADMIN_IDS');
 
-  const interval = parseInteger(env.OFFER_CHECK_INTERVAL_MINUTES, 60);
-  const maxPerRun = parseInteger(env.MAX_OFFERS_PER_RUN, 5);
+  const interval = parseInteger(env.OFFER_CHECK_INTERVAL_MINUTES, 30);
+  const maxPerRun = parseInteger(env.MAX_OFFERS_PER_RUN, 3);
+  const publishGapSeconds = parseInteger(env.OFFER_PUBLISH_GAP_SECONDS, 20);
+  const minScore = parseInteger(env.OFFER_MIN_SCORE, 28);
   const dataDir = path.resolve(PROJECT_ROOT, trim(env.DATA_DIR) || 'data');
+  const shopeeKeywords = parseCsv(env.SHOPEE_SEARCH_KEYWORDS);
+  const defaultShopeeKeywords = [
+    'tecnologia',
+    'informática',
+    'periféricos',
+    'games',
+    'acessórios gamer',
+    'eletrônicos',
+    'casa',
+    'utilidades domésticas'
+  ];
 
   return {
     projectRoot: PROJECT_ROOT,
@@ -98,12 +111,20 @@ export function loadConfig(env = process.env) {
     channelId,
     adminIds,
     autoPublish: parseBoolean(env.OFFER_AUTO_PUBLISH, false),
-    checkIntervalMinutes: interval > 0 ? interval : 60,
-    maxOffersPerRun: maxPerRun > 0 ? maxPerRun : 5,
+    checkIntervalMinutes: interval > 0 ? interval : 30,
+    maxOffersPerRun: maxPerRun > 0 ? maxPerRun : 3,
+    publishGapSeconds: publishGapSeconds >= 0 ? publishGapSeconds : 20,
+    minOfferScore: minScore > 0 ? minScore : 28,
+    requireAffiliateLink: parseBoolean(env.OFFER_REQUIRE_AFFILIATE_LINK, true),
     dataDir,
     logLevel: trim(env.LOG_LEVEL) || 'info',
     feedUrl: trim(env.OFFER_FEED_URL),
     channelLink: trim(env.BGC_CHANNEL_LINK),
+    shopeeAppId: trim(env.SHOPEE_APP_ID),
+    shopeeAppSecret: trim(env.SHOPEE_APP_SECRET),
+    shopeeApiUrl: trim(env.SHOPEE_API_URL) || 'https://open-api.affiliate.shopee.com.br/graphql',
+    shopeeSubIds: parseCsv(env.SHOPEE_SUB_IDS),
+    shopeeKeywords: shopeeKeywords.length ? shopeeKeywords : defaultShopeeKeywords,
     maxPrice: parseNumber(env.OFFER_MAX_PRICE),
     minDiscountPercent: parseNumber(env.OFFER_MIN_DISCOUNT_PERCENT),
     allowedStores: parseCsv(env.OFFER_ALLOWED_STORES).map((item) => item.toLowerCase()),

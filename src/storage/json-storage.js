@@ -6,9 +6,11 @@ const DEFAULT_DB = {
   version: 1,
   offers: [],
   history: [],
+  seenOffers: [],
   settings: {
     autoPublishEnabled: false,
-    template: null
+    template: null,
+    lastAutomationRun: null
   }
 };
 
@@ -92,9 +94,11 @@ export class JsonStorage {
       version: Number.isInteger(data.version) ? data.version : 1,
       offers: Array.isArray(data.offers) ? data.offers : [],
       history: Array.isArray(data.history) ? data.history : [],
+      seenOffers: Array.isArray(data.seenOffers) ? data.seenOffers : [],
       settings: {
         autoPublishEnabled: Boolean(data.settings?.autoPublishEnabled),
-        template: data.settings?.template ?? null
+        template: data.settings?.template ?? null,
+        lastAutomationRun: data.settings?.lastAutomationRun ?? null
       }
     };
   }

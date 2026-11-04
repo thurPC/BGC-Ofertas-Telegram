@@ -7,7 +7,11 @@ export const WARNING_TEXT = {
   'coupon-missing': '🎟️ Nenhum cupom encontrado na página.',
   'price-missing': '💰 Preço não encontrado na página. Informe manualmente.',
   'price-authorized-only':
-    '💰 O preço da Amazon só é exibido a partir de uma fonte autorizada (API oficial do Amazon Associados). Informe o preço manualmente.'
+    '💰 O preço da Amazon só é exibido a partir de uma fonte autorizada (API oficial do Amazon Associados). Informe o preço manualmente.',
+  'affiliate-credentials-missing':
+    'Credenciais da Shopee não configuradas. O link original será mantido; configure SHOPEE_APP_ID e SHOPEE_APP_SECRET para gerar o link de afiliado.',
+  'affiliate-link-failed':
+    'A Shopee não conseguiu gerar o link de afiliado. O link original foi mantido; confira as credenciais e permissões da API.'
 };
 
 export function platformLabel(platform) {

@@ -9,7 +9,9 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "node --test test/*.js"
+    "test": "node --test test/*.js",
+    "test:coverage": "node --test --experimental-test-coverage test/*.js",
+    "syntax": "node --check index.js"
   },
   "keywords": [
     "telegram",

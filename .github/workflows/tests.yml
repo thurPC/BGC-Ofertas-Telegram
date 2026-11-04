@@ -1,0 +1,43 @@
+name: Testes BGC Ofertas
+
+on:
+  pull_request:
+  push:
+    branches: [main, '261104-feat-automacao-completa-shopee', 'feat/shopee-affiliate-api']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Verificar sintaxe
+        run: |
+          node --check index.js
+          node --check src/config.js
+          node --check src/bot.js
+          node --check src/services/shopee-affiliate-client.js
+          node --check src/services/scheduler-service.js
+          node --check src/services/offer-scorer.js
+          node --check src/sources/shopee-offer-source.js
+          node --check src/services/readiness-service.js
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Cobertura
+        run: npm run test:coverage
+
+      - name: Auditoria de dependências
+        run: npm audit --audit-level=high
+        continue-on-error: true
