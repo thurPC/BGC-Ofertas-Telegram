@@ -617,13 +617,6 @@ export async function extractOfferFromLink(rawUrl, options = {}) {
     data.previousPrice = null;
   }
 
-  const warnings = [];
-  if (!data.imageUrl) warnings.push('image-missing');
-  if (!data.coupon) warnings.push('coupon-missing');
-  if (data.price == null) warnings.push('price-missing');
-  if (priceGated) warnings.push('price-authorized-only');
-  if (affiliateLinkWarning) warnings.push(affiliateLinkWarning);
-
   // O link original (afiliado) é sempre o publicado; o resolvido serve apenas para consulta.
   let affiliateUrl = url;
   let affiliateLinkWarning = null;
@@ -637,7 +630,7 @@ export async function extractOfferFromLink(rawUrl, options = {}) {
       affiliateLinkWarning = 'affiliate-credentials-missing';
     }
   }
-  const offer = { ...data, store, asin, url: affiliateUrl, originalAffiliateUrl: url, resolvedProductUrl: resolvedUrl };
+  const warnings = [];\n  if (!data.imageUrl) warnings.push('image-missing');\n  if (!data.coupon) warnings.push('coupon-missing');\n  if (data.price == null) warnings.push('price-missing');\n  if (priceGated) warnings.push('price-authorized-only');\n  if (affiliateLinkWarning) warnings.push(affiliateLinkWarning);\n\n  const offer = { ...data, store, asin, url: affiliateUrl, originalAffiliateUrl: url, resolvedProductUrl: resolvedUrl };
   const missing = [];
   if (!offer.name) missing.push('name');
   if (offer.price == null) missing.push('price');
