@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { OfferSource, normalizeFetchedOffer } from './source-interface.js';
 import { logger } from '../logger.js';
+import { calculateDiscount } from '../services/validation-service.js';
 
 const ENDPOINT = 'https://open-api.affiliate.shopee.com.br/graphql';
 const SEARCH_TERMS = [
@@ -41,7 +42,7 @@ function normalizeProduct(node) {
     price,
     previousPrice,
     imageUrl: node.imageUrl,
-    url: node.offerLink || node.productLink,
+    url: node.offerLink,
     store: node.shopName || 'Shopee'
   }, 'Shopee');
 }
@@ -103,7 +104,7 @@ export class ShopeeOfferSource extends OfferSource {
       }
       const nodes = payload.data?.productOfferV2?.nodes;
       if (!Array.isArray(nodes)) return { ok: false, reason: 'invalid-response' };
-      return { ok: true, offers: nodes.map(normalizeProduct).filter((item) => item.name && item.price !== null && item.url) };
+      return { ok: true, offers: nodes.map((node) => {\n        const item = normalizeProduct(node);\n        return { ...item, discountPercent: calculateDiscount(item.previousPrice, item.price) };\n      }).filter((item) => item.name && item.price !== null && item.url && /^https:\\/\\//i.test(item.url)) };
     } catch (error) {
       logger.warn('Falha ao consultar ofertas da Shopee.', error?.name === 'AbortError' ? 'timeout' : 'network');
       return { ok: false, reason: error?.name === 'AbortError' ? 'timeout' : 'network' };
