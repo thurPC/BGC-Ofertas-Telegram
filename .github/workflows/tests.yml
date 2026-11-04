@@ -1,0 +1,22 @@
+name: Testes BGC Ofertas
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, feat/shopee-affiliate-api]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Instalar dependências
+        run: npm install
+      - name: Executar testes
+        run: npm test

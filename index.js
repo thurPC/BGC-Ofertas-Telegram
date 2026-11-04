@@ -16,6 +16,7 @@ import { TemplateService } from './src/services/template-service.js';
 import { JsonStorage } from './src/storage/json-storage.js';
 import { createConfiguredSources } from './src/sources/json-feed-source.js';
 import { InstanceLock } from './src/process-lock.js';
+import { createShopeeAffiliateClient } from './src/services/shopee-affiliate-client.js';
 
 dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
 
@@ -95,7 +96,9 @@ async function main() {
     publishingService
   });
 
-  const ctx = { config, offerService, publishingService, scheduler, templateService };
+  const shopeeClient = createShopeeAffiliateClient(config);
+  const linkOptions = { shopeeClient };
+  const ctx = { config, offerService, publishingService, scheduler, templateService, linkOptions };
 
   registerPublicCommands(bot);
   registerMessageHandler(bot, ctx);

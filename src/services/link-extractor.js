@@ -1,5 +1,6 @@
 import dns from 'node:dns/promises';
 import { parseBrazilianPrice, roundMoney } from './validation-service.js';
+import { createShopeeAffiliateClient } from './shopee-affiliate-client.js';
 
 const DEFAULT_TIMEOUT_MS = 12000;
 const MAX_HTML_CHARS = 1_000_000;
@@ -616,14 +617,20 @@ export async function extractOfferFromLink(rawUrl, options = {}) {
     data.previousPrice = null;
   }
 
-  const warnings = [];
-  if (!data.imageUrl) warnings.push('image-missing');
-  if (!data.coupon) warnings.push('coupon-missing');
-  if (data.price == null) warnings.push('price-missing');
-  if (priceGated) warnings.push('price-authorized-only');
-
   // O link original (afiliado) é sempre o publicado; o resolvido serve apenas para consulta.
-  const offer = { ...data, store, asin, url, originalAffiliateUrl: url, resolvedProductUrl: resolvedUrl };
+  let affiliateUrl = url;
+  let affiliateLinkWarning = null;
+  if (platform?.id === 'shopee') {
+    const client = options.shopeeClient || createShopeeAffiliateClient(options.shopeeConfig || {});
+    if (client.isConfigured()) {
+      const generated = await client.generateShortLink(url);
+      if (generated.ok) affiliateUrl = generated.shortLink;
+      else affiliateLinkWarning = generated.reason || 'affiliate-link-failed';
+    } else {
+      affiliateLinkWarning = 'affiliate-credentials-missing';
+    }
+  }
+  const warnings = [];\n  if (!data.imageUrl) warnings.push('image-missing');\n  if (!data.coupon) warnings.push('coupon-missing');\n  if (data.price == null) warnings.push('price-missing');\n  if (priceGated) warnings.push('price-authorized-only');\n  if (affiliateLinkWarning) warnings.push(affiliateLinkWarning);\n\n  const offer = { ...data, store, asin, url: affiliateUrl, originalAffiliateUrl: url, resolvedProductUrl: resolvedUrl };
   const missing = [];
   if (!offer.name) missing.push('name');
   if (offer.price == null) missing.push('price');
