@@ -133,10 +133,9 @@ export class ShopeeAffiliateClient {
   }
 
   async enrichProductUrl(url) {
-    const offer = await this.findProductOffer(url);
-    if (!offer.ok) return offer;
     const link = await this.generateShortLink(url);
-    return { ok: true, product: { ...offer.product, url: link.ok ? link.shortLink : offer.product.url || url }, affiliateLinkGenerated: link.ok };
+    if (!link.ok) return link;
+    return { ok: true, product: { url: link.shortLink }, affiliateLinkGenerated: true };
   }
 }
 
