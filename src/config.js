@@ -87,7 +87,7 @@ export function loadConfig(env = process.env) {
   if (!channelId) missing.push('TELEGRAM_CHANNEL_ID');
   if (adminIds.length === 0) missing.push('ADMIN_IDS');
 
-  const interval = parseInteger(env.OFFER_CHECK_INTERVAL_MINUTES, 60);
+  const interval = parseInteger(env.OFFER_CHECK_INTERVAL_MINUTES, 30);
   const maxPerRun = parseInteger(env.MAX_OFFERS_PER_RUN, 5);
   const dataDir = path.resolve(PROJECT_ROOT, trim(env.DATA_DIR) || 'data');
 
@@ -108,6 +108,7 @@ export function loadConfig(env = process.env) {
     shopeeAppSecret: trim(env.SHOPEE_APP_SECRET),
     shopeeApiUrl: trim(env.SHOPEE_API_URL) || 'https://open-api.affiliate.shopee.com.br/graphql',
     shopeeSubIds: parseCsv(env.SHOPEE_SUB_IDS),
+    shopeeKeywords: parseCsv(env.SHOPEE_SEARCH_KEYWORDS).length ? parseCsv(env.SHOPEE_SEARCH_KEYWORDS) : ['tecnologia', 'informática', 'periféricos', 'games', 'acessórios gamer', 'eletrônicos', 'casa', 'utilidades domésticas'],
     maxPrice: parseNumber(env.OFFER_MAX_PRICE),
     minDiscountPercent: parseNumber(env.OFFER_MIN_DISCOUNT_PERCENT),
     allowedStores: parseCsv(env.OFFER_ALLOWED_STORES).map((item) => item.toLowerCase()),
