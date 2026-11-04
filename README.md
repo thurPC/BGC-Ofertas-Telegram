@@ -76,9 +76,16 @@ ADMIN_IDS=123456789,987654321
 | `TELEGRAM_CHANNEL_ID` | sim | ID ou @username do canal |
 | `ADMIN_IDS` | sim | IDs numéricos autorizados |
 | `NODE_ENV` | não | Padrão: `production` |
-| `OFFER_AUTO_PUBLISH` | não | Padrão: `false` |
-| `OFFER_CHECK_INTERVAL_MINUTES` | não | Intervalo da consulta automática. Padrão: `60` |
-| `MAX_OFFERS_PER_RUN` | não | Limite por ciclo automático. Padrão: `5` |
+| `OFFER_AUTO_PUBLISH` | não | Padrão: `false`. Só publique no canal depois da verificação de prontidão |
+| `OFFER_CHECK_INTERVAL_MINUTES` | não | Intervalo da consulta automática. Padrão: `30` |
+| `MAX_OFFERS_PER_RUN` | não | Limite por ciclo automático. Padrão: `3` |
+| `OFFER_PUBLISH_GAP_SECONDS` | não | Intervalo mínimo entre publicações no mesmo ciclo. Padrão: `20` |
+| `OFFER_MIN_SCORE` | não | Pontuação mínima para selecionar uma oferta. Padrão: `28` |
+| `SHOPEE_APP_ID` | não | App ID da Shopee Affiliate Open API |
+| `SHOPEE_APP_SECRET` | não | App Secret da Shopee. Nunca versionar |
+| `SHOPEE_API_URL` | não | Padrão: `https://open-api.affiliate.shopee.com.br/graphql` |
+| `SHOPEE_SUB_IDS` | não | Sub IDs de rastreamento, separados por vírgula |
+| `SHOPEE_SEARCH_KEYWORDS` | não | Termos das categorias Tecnologia, Informática, Games, Eletrônicos e Casa |
 | `DATA_DIR` | não | Pasta dos JSON. Padrão: `./data` |
 | `LOG_LEVEL` | não | `error`, `warn`, `info` ou `debug` |
 | `OFFER_FEED_URL` | não | URL https de um feed JSON **autorizado** |
@@ -210,7 +217,7 @@ Feed de teste deste repositório:
 https://raw.githubusercontent.com/thurPC/BGC-Ofertas-Telegram/main/feed.json
 ```
 
-Mercado Livre, Amazon e Shopee **não** estão integrados por API própria. Só existe a leitura do feed configurado. Não inventamos endpoints, chaves ou scraping.
+A Shopee Affiliate Open API entra como fonte automática quando `SHOPEE_APP_ID` e `SHOPEE_APP_SECRET` existem. O bot autentica com SHA-256, busca as cinco categorias, pontua, remove duplicatas e só publica link com rastreamento de afiliado. Sem essas credenciais, permanece o feed JSON e o cadastro manual. Não inventamos endpoints, preços, cupons ou comissões.
 
 Se nenhuma fonte estiver configurada, o modo manual funciona normalmente. Com o feed configurado e `OFFER_AUTO_PUBLISH=false` (padrão), o bot **consulta** o JSON, mas **não importa** e **não publica** no canal. Duplicatas (mesmo `id` externo, mesmo link ou mesmo nome+loja) não são importadas de novo quando a importação/publicação automática estiver em uso.
 
@@ -314,4 +321,13 @@ MIT. Veja `LICENSE`.
 5. Conclua o cadastro, revise a prévia e só então confirme a publicação.
 6. Verifique a mensagem no canal.
 
-Próximo passo de hospedagem: escolha um serviço com processo 24h e disco persistente, defina as mesmas variáveis de ambiente e inicie com `npm start`. Não ligue `OFFER_AUTO_PUBLISH` sem uma fonte autorizada configurada.
+## Ativar a automação Shopee
+
+1. Preencha `SHOPEE_APP_ID`, `SHOPEE_APP_SECRET` e, se necessário, `SHOPEE_SUB_IDS`.
+2. Mantenha `OFFER_AUTO_PUBLISH=false`.
+3. Inicie o bot e confira `/status`: o agendador deve consultar e pontuar sem publicar.
+4. Valide uma publicação manual em chat privado com `/novaoferta` + link Shopee.
+5. Só então defina `OFFER_AUTO_PUBLISH=true`, `OFFER_CHECK_INTERVAL_MINUTES=30` e `MAX_OFFERS_PER_RUN` baixo (1 a 3).
+6. Se a verificação de prontidão bloquear, corrija canal, credenciais, duplicidade ou testes antes de republicar.
+
+Próximo passo de hospedagem: escolha um serviço com processo 24h e disco persistente, defina as mesmas variáveis de ambiente e inicie com `npm start`. Mantenha `OFFER_AUTO_PUBLISH=false` até validar busca real, links afiliados, canal privado de teste e a verificação de prontidão.

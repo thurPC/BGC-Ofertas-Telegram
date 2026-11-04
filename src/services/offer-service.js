@@ -240,4 +240,48 @@ export class OfferService {
       cancelada: count(OFFER_STATUS.CANCELLED)
     };
   }
+
+  async seenKeys() {
+    const db = await this.storage.read();
+    const keys = new Set();
+    for (const key of db.seenOffers || []) {
+      if (key) keys.add(String(key));
+    }
+    for (const offer of db.offers || []) {
+      if (offer.externalId) keys.add(String(offer.externalId));
+      const url = String(offer.url ?? '').trim().toLowerCase();
+      if (url) keys.add(url);
+    }
+    return keys;
+  }
+
+  async recordAutomationRun(summary = {}) {
+    const seenKeys = Array.isArray(summary.seenKeys) ? summary.seenKeys.map((item) => String(item)).filter(Boolean) : [];
+    const record = {
+      at: nowIso(),
+      fetched: summary.fetched ?? 0,
+      imported: summary.imported ?? 0,
+      published: summary.published ?? 0,
+      selected: summary.selected ?? 0,
+      duplicates: summary.duplicates ?? 0,
+      rejected: summary.rejected ?? 0,
+      note: summary.note ?? null
+    };
+    await this.storage.update((db) => {
+      const seen = new Set(Array.isArray(db.seenOffers) ? db.seenOffers : []);
+      for (const key of seenKeys) seen.add(key);
+      db.seenOffers = [...seen].slice(-5000);
+      db.settings = { ...db.settings, lastAutomationRun: record };
+      db.history.push({
+        at: record.at,
+        action: 'automation-run',
+        actorId: 'scheduler',
+        fetched: record.fetched,
+        imported: record.imported,
+        published: record.published
+      });
+      return db;
+    });
+    return record;
+  }
 }
