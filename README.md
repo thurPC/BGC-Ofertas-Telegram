@@ -86,6 +86,8 @@ ADMIN_IDS=123456789,987654321
 | `OFFER_MIN_DISCOUNT_PERCENT` | não | Desconto mínimo calculável |
 | `OFFER_ALLOWED_STORES` | não | Lojas permitidas, separadas por vírgula |
 | `OFFER_ALLOWED_HOURS` | não | Horários `8-22` ou lista `9,10,11` |
+| `OFFER_EXCLUDE_CATEGORIES` | não | Categorias extras de exclusão, separadas por vírgula |
+| `OFFER_EXCLUDE_KEYWORDS` | não | Palavras-chave extras de exclusão, separadas por vírgula |
 
 Na inicialização o bot informa quais variáveis estão ausentes **sem revelar valores**.
 
@@ -181,6 +183,7 @@ A pasta `src/sources/` define a interface:
 - obter preços, imagens, cupons e links
 - informar origem e horário da consulta
 - aplicar filtros de preço, desconto, loja e horário
+- aplicar o filtro permanente de conteúdo (categoria, título e descrição)
 
 Há um conector HTTP de **feed JSON autorizado** (`OFFER_FEED_URL`). O formato esperado é:
 
@@ -203,6 +206,21 @@ Há um conector HTTP de **feed JSON autorizado** (`OFFER_FEED_URL`). O formato e
 ```
 
 Campos obrigatórios: `name`, `price`, `url`, `store`. Os demais são omitidos se vazios. A URL do produto é preservada exatamente como veio no feed (incluindo parâmetros de afiliado). Itens inválidos são ignorados e registrados; falha HTTP, JSON quebrado, timeout ou fonte indisponível não derrubam o bot.
+
+### Filtro permanente de conteúdo
+
+Livros e publicações não são cadastrados nem publicados automaticamente. O filtro avalia **categoria**, **título** e **descrição** do produto e bloqueia livros físicos, e-books, audiolivros, mangás, HQs/quadrinhos, revistas, apostilas, enciclopédias e dicionários. A lista padrão fica em `src/services/exclusion-filter.js` e pode ser ampliada com `OFFER_EXCLUDE_CATEGORIES` e `OFFER_EXCLUDE_KEYWORDS`.
+
+O filtro é aplicado **antes** da pontuação, seleção, importação e publicação — inclusive no cadastro manual e na publicação administrativa (defesa em profundidade). Dispositivos como Kindle, tablets, leitores digitais (e-readers) e acessórios **não** são bloqueados, pois são eletrônicos, e a integração com a Shopee, os links de afiliado e o modelo `BGC PROMOS` permanecem intactos.
+
+Campos opcionais do feed que o filtro também lê:
+
+```json
+{
+  "category": "Livros",
+  "description": "Edição digital em e-book"
+}
+```
 
 Feed de teste deste repositório:
 
@@ -235,6 +253,7 @@ Os testes não usam token real. Cobrem:
 - ausência de botões inline na publicação
 - ausência de fontes automáticas
 - leitura do feed JSON (sucesso, vazio, inválido, falha HTTP, timeout e deduplicação)
+- filtro permanente de conteúdo (livros bloqueados, dispositivos como Kindle/tablet aceitos)
 
 ## Publicação no GitHub
 

@@ -1,5 +1,6 @@
 import { logger } from '../logger.js';
 import { chooseSendMode, formatOfferHtml } from '../formatters/offer-message.js';
+import { analyzeExclusion, exclusionMessage } from './exclusion-filter.js';
 import { OFFER_STATUS } from './offer-service.js';
 import { defaultTemplate, mergeTemplate } from './template-service.js';
 import { validateHttpUrl } from './validation-service.js';
@@ -43,6 +44,10 @@ export class PublishingService {
 
   canPublish(offer) {
     if (!offer) return { ok: false, error: 'Oferta não encontrada.' };
+    const exclusion = analyzeExclusion(offer);
+    if (exclusion.excluded) {
+      return { ok: false, error: exclusionMessage(exclusion.reasons) };
+    }
     if (!offer.url) return { ok: false, error: 'Não é possível publicar sem um link válido.' };
     const url = validateHttpUrl(offer.url, { required: true });
     if (!url.ok) return { ok: false, error: url.error };

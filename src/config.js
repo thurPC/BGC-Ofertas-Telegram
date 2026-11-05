@@ -108,6 +108,8 @@ export function loadConfig(env = process.env) {
     minDiscountPercent: parseNumber(env.OFFER_MIN_DISCOUNT_PERCENT),
     allowedStores: parseCsv(env.OFFER_ALLOWED_STORES).map((item) => item.toLowerCase()),
     allowedHours: parseHours(env.OFFER_ALLOWED_HOURS),
+    excludedCategories: parseCsv(env.OFFER_EXCLUDE_CATEGORIES),
+    excludedKeywords: parseCsv(env.OFFER_EXCLUDE_KEYWORDS),
     missing
   };
 }

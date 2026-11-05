@@ -1,5 +1,6 @@
 import { confirmPublishKeyboard } from '../commands/admin.js';
 import { formatOfferPreview } from '../formatters/offer-message.js';
+import { exclusionMessage, isExcludedProduct } from '../services/exclusion-filter.js';
 import {
   isOptionalSkip,
   parseBrazilianPrice,
@@ -81,6 +82,11 @@ export function applyWizardInput(state, text) {
   const step = state.editingField || state.step;
   const result = handleStep(step, text);
   if (!result.ok) return result;
+
+  // Filtro permanente no cadastro guiado: um nome de livro bloqueia o fluxo.
+  if (step === 'name' && result.value && isExcludedProduct({ name: result.value })) {
+    return { ok: false, blocked: true, error: exclusionMessage() };
+  }
 
   if (result.skipped) {
     if (step === 'coupon') state.data.coupon = null;

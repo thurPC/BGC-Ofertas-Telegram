@@ -18,11 +18,13 @@ import {
 } from './wizard.js';
 import {
   analyzeLink,
+  blockedOfferMessage,
   extractionSummary,
   invalidLinkMessage,
   missingFieldsMessage,
   missingFieldsPrompt
 } from '../services/offer-automation.js';
+import { analyzeExclusion, isExcludedProduct } from '../services/exclusion-filter.js';
 import { logger } from '../logger.js';
 
 const SESSIONS = new Map();
@@ -57,6 +59,18 @@ export async function handleOfferLink(bot, ctx, chatId, userId, link) {
       { parse_mode: 'HTML', disable_web_page_preview: true }
     );
     return { ok: false };
+  }
+
+  // Filtro permanente: livros, e-books, audiolivros, mangás, HQs, revistas,
+  // apostilas, enciclopédias e dicionários não entram no fluxo de publicação.
+  if (isExcludedProduct(analysis.offer)) {
+    const exclusion = analyzeExclusion(analysis.offer);
+    logger.info('Link bloqueado pelo filtro de conteúdo.', exclusion.reasons);
+    await bot.sendMessage(chatId, blockedOfferMessage(exclusion.reasons), {
+      parse_mode: 'HTML',
+      disable_web_page_preview: true
+    });
+    return { ok: false, blocked: true, reasons: exclusion.reasons };
   }
 
   const session = createExtractionSession(userId, analysis.offer);

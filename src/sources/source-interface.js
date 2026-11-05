@@ -1,3 +1,5 @@
+import { isExcludedProduct } from '../services/exclusion-filter.js';
+
 export class OfferSource {
   constructor(name) {
     this.name = name;
@@ -29,6 +31,8 @@ function preserveText(value) {
 export function normalizeFetchedOffer(raw, sourceName) {
   return {
     name: preserveText(raw?.name),
+    category: preserveText(raw?.category),
+    description: preserveText(raw?.description),
     price: raw?.price ?? null,
     previousPrice: raw?.previousPrice ?? null,
     pixPrice: raw?.pixPrice ?? null,
@@ -47,6 +51,7 @@ export function normalizeFetchedOffer(raw, sourceName) {
 export function applyOfferFilters(offers, config) {
   return offers.filter((offer) => {
     if (!offer?.url) return false;
+    if (isExcludedProduct(offer, config)) return false;
     if (config.maxPrice != null && offer.price != null && offer.price > config.maxPrice) return false;
     if (
       config.minDiscountPercent != null &&

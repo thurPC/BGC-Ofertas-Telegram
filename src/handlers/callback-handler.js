@@ -300,7 +300,7 @@ async function handleWizardCallback(bot, ctx, query, data, userId, chatId) {
       const created = await ctx.offerService.create(session.data, { actorId: userId });
       if (!created.ok) {
         await safeAnswer(bot, query, 'Dados inválidos.');
-        await bot.sendMessage(chatId, created.errors.join('\n'));
+        await bot.sendMessage(chatId, (created.errors || [created.error]).join('\n'));
         return;
       }
       offer = created.offer;

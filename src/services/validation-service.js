@@ -146,6 +146,13 @@ export function validateOfferInput(input, { partial = false } = {}) {
   const errors = [];
   const offer = {};
 
+  if (input.category !== undefined && input.category !== null && String(input.category).trim() !== '') {
+    offer.category = String(input.category).trim().slice(0, 120);
+  }
+  if (input.description !== undefined && input.description !== null && String(input.description).trim() !== '') {
+    offer.description = String(input.description).trim().slice(0, 600);
+  }
+
   const name = validateRequiredText(input.name, 'Nome do produto', { max: 180 });
   if (!name.ok) {
     if (!partial || input.name !== undefined) errors.push(name.error);

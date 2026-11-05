@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { analyzeExclusion, exclusionMessage, isExcludedProduct } from './exclusion-filter.js';
 import { calculateDiscount, validateOfferInput } from './validation-service.js';
 
 export const OFFER_STATUS = {
@@ -13,6 +14,11 @@ const EDITABLE = new Set([OFFER_STATUS.DRAFT, OFFER_STATUS.READY]);
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function preserveOptionalText(value) {
+  const text = String(value ?? '').trim();
+  return text || null;
 }
 
 function normalizeKey(value) {
@@ -92,12 +98,17 @@ export class OfferService {
     if (!validation.ok) {
       return { ok: false, errors: validation.errors };
     }
+    if (isExcludedProduct(validation.offer)) {
+      return { ok: false, error: exclusionMessage(analyzeExclusion(validation.offer).reasons) };
+    }
 
     const db = await this.storage.read();
     const duplicates = findDuplicates(db.offers, validation.offer);
     const offer = {
       id: createOfferId(),
       ...validation.offer,
+      category: preserveOptionalText(input.category),
+      description: preserveOptionalText(input.description),
       url: input.url || validation.offer.url,
       imageUrl: input.imageUrl || validation.offer.imageUrl || null,
       externalId: input.externalId ?? null,
@@ -173,6 +184,9 @@ export class OfferService {
     const merged = { ...current, ...patch };
     const validation = validateOfferInput(merged);
     if (!validation.ok) return { ok: false, errors: validation.errors };
+    if (isExcludedProduct(validation.offer)) {
+      return { ok: false, error: exclusionMessage(analyzeExclusion(validation.offer).reasons) };
+    }
 
     const next = {
       ...current,

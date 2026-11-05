@@ -1,5 +1,6 @@
 import { confirmPublishKeyboard } from '../commands/admin.js';
 import { extractOfferFromLink } from './link-extractor.js';
+import { exclusionMessage } from './exclusion-filter.js';
 import { escapeHtml } from './validation-service.js';
 
 export const WARNING_TEXT = {
@@ -16,6 +17,10 @@ export function platformLabel(platform) {
 
 export function analyzeLink(rawUrl, options = {}) {
   return extractOfferFromLink(rawUrl, options);
+}
+
+export function blockedOfferMessage(reasons = []) {
+  return exclusionMessage(reasons);
 }
 
 function brl(value) {

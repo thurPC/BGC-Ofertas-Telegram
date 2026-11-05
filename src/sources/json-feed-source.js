@@ -1,5 +1,10 @@
 import { OfferSource, normalizeFetchedOffer } from './source-interface.js';
 import { logger } from '../logger.js';
+import {
+  analyzeExclusion,
+  exclusionMessage,
+  isExcludedProduct
+} from '../services/exclusion-filter.js';
 import { calculateDiscount, validateOfferInput } from '../services/validation-service.js';
 
 const DEFAULT_TIMEOUT_MS = 12000;
@@ -41,6 +46,15 @@ export function parseFeedPayload(payload, sourceName = 'json-feed') {
     }
 
     const normalized = normalizeFetchedOffer(item, item.store || sourceName);
+    if (isExcludedProduct(normalized)) {
+      skipped += 1;
+      errors.push({
+        index,
+        name: normalized.name,
+        errors: [exclusionMessage(analyzeExclusion(normalized).reasons)]
+      });
+      return;
+    }
     const validation = validateOfferInput(normalized);
     if (!validation.ok) {
       skipped += 1;

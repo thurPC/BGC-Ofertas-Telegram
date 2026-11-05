@@ -1,5 +1,6 @@
 import { logger } from '../logger.js';
 import { applyOfferFilters, isWithinAllowedHours } from '../sources/source-interface.js';
+import { analyzeExclusion, isExcludedProduct } from './exclusion-filter.js';
 import { findDuplicates } from './offer-service.js';
 import { validateOfferInput } from './validation-service.js';
 
@@ -88,6 +89,7 @@ export class SchedulerService {
 
     const existing = await this.offerService.list();
     const { collected, sourceErrors } = await this.collectFromSources();
+    const contentBlocked = collected.filter((item) => isExcludedProduct(item, this.config)).length;
     const filtered = applyOfferFilters(collected, this.config).slice(0, this.config.maxOffersPerRun);
     const errors = [...sourceErrors];
     let imported = 0;
@@ -98,6 +100,12 @@ export class SchedulerService {
       const validation = validateOfferInput(item);
       if (!validation.ok) {
         errors.push({ name: item.name, errors: validation.errors });
+        continue;
+      }
+      // Defesa em profundidade: nada que seja livro/publicação passa daqui.
+      const exclusion = analyzeExclusion(validation.offer, this.config);
+      if (exclusion.excluded) {
+        contentBlocked += 1;
         continue;
       }
       const candidate = {
@@ -133,6 +141,7 @@ export class SchedulerService {
       imported,
       published,
       duplicates,
+      contentBlocked,
       errors
     };
   }
