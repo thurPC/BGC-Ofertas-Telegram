@@ -396,3 +396,51 @@ test('couponFromOfferFields nao inventa desconto', () => {
   assert.equal(extracted.code, 'PAGINA10');
   assert.equal(extracted.value, null);
 });
+
+test('nome de marketplace nao e tratado como restricao de vendedor', () => {
+  const fromFeed = couponFromOfferFields({
+    coupon: 'SHOPEE10',
+    store: 'Shopee',
+    url: 'https://shopee.com.br/item'
+  });
+  assert.equal(fromFeed.marketplace, 'shopee');
+  assert.equal(fromFeed.store, null);
+  const result = evaluateCouponEligibility(fromFeed, product({ store: 'Shopee', category: null }), NOW);
+  assert.equal(result.eligible, true);
+});
+
+test('produto sem categoria ainda recebe cupom do marketplace, sem garantia', async () => {
+  const { service } = await tempCouponService();
+  await service.upsertMany([coupon({ categories: ['Eletronicos'] })]);
+  const associated = await service.associate(product({ category: null }), { persist: false, at: NOW });
+  assert.equal(associated.offer.coupon, 'ELETRO10');
+  assert.equal(associated.offer.couponGuaranteed, false);
+  assert.equal(associated.offer.couponEstimatedPrice, 180);
+  assert.match(associated.offer.couponConditions, /categoria/i);
+});
+
+test('cupom da pagina inelegivel cede ao melhor cupom do catalogo', async () => {
+  const { service } = await tempCouponService();
+  await service.upsertMany([coupon({ code: 'CATALOGO20', value: 20 })]);
+  const associated = await service.associate(
+    product({ coupon: 'PAGINA10' }),
+    { persist: false, at: NOW }
+  );
+  assert.equal(associated.offer.coupon, 'CATALOGO20');
+  assert.equal(associated.offer.couponEstimatedPrice, 160);
+});
+
+test('create associa cupom automaticamente sem categoria no cadastro', async () => {
+  const { service, storage } = await tempCouponService();
+  await service.upsertMany([coupon()]);
+  const offerService = new OfferService(storage, { couponService: service });
+  const created = await offerService.create({
+    name: 'Fone Bluetooth',
+    price: 200,
+    url: 'https://shopee.com.br/fone?afiliado=bgc',
+    store: 'Shopee'
+  });
+  assert.equal(created.ok, true);
+  assert.equal(created.offer.coupon, 'ELETRO10');
+  assert.equal(created.offer.couponEstimatedPrice, 180);
+});

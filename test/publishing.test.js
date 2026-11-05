@@ -186,6 +186,38 @@ test('recusa republicar oferta já publicada', async () => {
   assert.equal(sent.length, 0);
 });
 
+test('publicacao associa cupom do catalogo ao produto elegivel', async () => {
+  const sent = [];
+  const couponService = {
+    async associate(offer) {
+      return {
+        offer: {
+          ...offer,
+          coupon: 'SHOPEE10',
+          couponEstimatedPrice: 134.91,
+          couponGuaranteed: true
+        }
+      };
+    }
+  };
+  const service = new PublishingService({
+    bot: {
+      async sendPhoto(chatId, photo, extra) {
+        sent.push({ extra });
+        return { message_id: 1 };
+      }
+    },
+    config: { channelId: '-100123' },
+    offerService: { markPublished: async () => ({ ok: true }) },
+    templateService: { async get() { return templateWithChannel(); } },
+    couponService
+  });
+  const result = await service.publish({ ...completeOffer, coupon: null }, { actorId: 1 });
+  assert.equal(result.ok, true);
+  assert.match(sent[0].extra.caption, /🎟️ Cupom: SHOPEE10/);
+  assert.match(sent[0].extra.caption, /com cupom R\$ 134,91/);
+});
+
 test('ausência de fontes automáticas não quebra o modo manual', async () => {
   const sources = createConfiguredSources({ feedUrl: '' });
   assert.equal(sources.length, 0);

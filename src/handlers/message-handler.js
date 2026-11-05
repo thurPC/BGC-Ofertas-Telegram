@@ -40,7 +40,23 @@ export function extractLinkFromText(text) {
   return match ? match[1] : null;
 }
 
+export async function associateSessionOffer(ctx, session) {
+  if (!ctx.couponService?.associate) return session;
+  try {
+    const associated = await ctx.couponService.associate(session.data, {
+      persist: false,
+      actorId: session.userId
+    });
+    if (associated?.offer) session.data = associated.offer;
+  } catch {
+    // Cupons indisponíveis não interrompem a prévia.
+  }
+  return session;
+}
+
 async function showPreview(bot, ctx, chatId, session) {
+  await associateSessionOffer(ctx, session);
+  setSession(session.userId, session);
   const options = await resolvePreviewOptions(ctx);
   const preview = previewPayload(session, options);
   const note = imageReviewNote(session.data);

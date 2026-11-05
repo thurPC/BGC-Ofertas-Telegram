@@ -70,6 +70,23 @@ function listHas(list, candidate) {
   });
 }
 
+function isMarketplaceAlias(value) {
+  const raw = normalizeKey(value);
+  if (!raw) return false;
+  return Object.values(MARKETPLACE_ALIASES).some((aliases) =>
+    aliases.some((alias) => raw === alias || raw.includes(alias))
+  );
+}
+
+export function enrichProduct(product = {}) {
+  const url = product.url || product.originalAffiliateUrl || product.resolvedProductUrl;
+  const marketplace = normalizeMarketplace(
+    product.marketplace || product.platform || product.store,
+    url
+  );
+  return { ...product, marketplace: marketplace || product.marketplace || null };
+}
+
 export function createCouponId() {
   return crypto.randomBytes(6).toString('hex');
 }
@@ -78,8 +95,7 @@ export function couponFingerprint(coupon) {
   const code = normalizeKey(coupon?.code);
   const marketplace = normalizeKey(coupon?.marketplace);
   const store = normalizeKey(coupon?.store);
-  const source = normalizeKey(coupon?.source);
-  return `${code}|${marketplace}|${store}|${source}`;
+  return `${code}|${marketplace}|${store}`;
 }
 
 export function normalizeMarketplace(value, url) {
@@ -113,7 +129,13 @@ export function normalizeCoupon(raw = {}, extras = {}) {
   if (!code) return null;
   const type = String(raw.type ?? raw.discountType ?? '').toLowerCase() === 'fixed' ? 'fixed' : 'percent';
   const value = asNumber(raw.value ?? raw.discountValue ?? raw.percent ?? raw.amount);
-  const marketplace = normalizeMarketplace(raw.marketplace ?? raw.platform, extras.url || raw.url);
+  const url = extras.url || raw.url;
+  let marketplace = normalizeMarketplace(raw.marketplace ?? raw.platform, url);
+  let store = asText(raw.store ?? raw.seller ?? raw.shop, 80);
+  if (store && isMarketplaceAlias(store)) {
+    if (!marketplace) marketplace = normalizeMarketplace(store, url);
+    store = null;
+  }
   return {
     id: asText(raw.id, 32) || createCouponId(),
     code: code.toUpperCase(),
@@ -122,7 +144,7 @@ export function normalizeCoupon(raw = {}, extras = {}) {
     maxDiscount: asNumber(raw.maxDiscount ?? raw.maxDiscountAmount),
     minPurchase: asNumber(raw.minPurchase ?? raw.minValue ?? raw.minimum),
     marketplace,
-    store: asText(raw.store ?? raw.seller ?? raw.shop, 80),
+    store,
     categories: uniqueList(raw.categories ?? raw.category ? [].concat(raw.categories ?? raw.category) : []),
     products: uniqueList(raw.products ?? raw.productIds ?? raw.skus),
     firstPurchaseOnly: Boolean(raw.firstPurchaseOnly ?? raw.firstPurchase),
@@ -171,6 +193,7 @@ export function calculateCouponDiscount(coupon, price) {
 
 export function evaluateCouponEligibility(coupon, product = {}, at = new Date()) {
   const reasons = [];
+  const soft = [];
   if (!coupon?.code) return { eligible: false, reasons: ['codigo-ausente'] };
 
   const status = couponStatusAt(coupon, at);
@@ -178,25 +201,31 @@ export function evaluateCouponEligibility(coupon, product = {}, at = new Date())
   if (status === COUPON_STATUS.EXPIRED) reasons.push('expirado');
   if (status === COUPON_STATUS.SCHEDULED) reasons.push('inicio-futuro');
 
-  const productMarketplace = normalizeMarketplace(product.marketplace || product.platform, product.url);
-  if (coupon.marketplace && productMarketplace && coupon.marketplace !== productMarketplace) {
+  const enriched = enrichProduct(product);
+  const productMarketplace = enriched.marketplace;
+  const couponMarketplace = coupon.marketplace || (isMarketplaceAlias(coupon.store) ? normalizeMarketplace(coupon.store) : null);
+  if (couponMarketplace && productMarketplace && couponMarketplace !== productMarketplace) {
     reasons.push('marketplace-incompativel');
   }
 
-  if (coupon.store) {
+  const sellerRestriction = coupon.store && !isMarketplaceAlias(coupon.store) ? coupon.store : null;
+  if (sellerRestriction) {
     const store = product.store || product.seller || product.shop;
-    if (!store || !listHas([coupon.store], store)) reasons.push('vendedor-incompativel');
+    if (!store) soft.push('vendedor-ausente');
+    else if (isMarketplaceAlias(store)) soft.push('vendedor-ausente');
+    else if (!listHas([sellerRestriction], store)) reasons.push('vendedor-incompativel');
   }
 
   if (coupon.categories?.length) {
     const category = product.category;
-    if (!category || !listHas(coupon.categories, category)) reasons.push('categoria-incompativel');
+    if (!category) soft.push('categoria-ausente');
+    else if (!listHas(coupon.categories, category)) reasons.push('categoria-incompativel');
   }
 
   if (coupon.products?.length) {
     const ids = [product.externalId, product.sku, product.asin, product.name].filter(Boolean);
-    const matched = ids.some((id) => listHas(coupon.products, id));
-    if (!matched) reasons.push('produto-incompativel');
+    if (!ids.length) soft.push('produto-ausente');
+    else if (!ids.some((id) => listHas(coupon.products, id))) reasons.push('produto-incompativel');
   }
 
   if (coupon.minPurchase != null && coupon.minPurchase > 0) {
@@ -206,11 +235,13 @@ export function evaluateCouponEligibility(coupon, product = {}, at = new Date())
 
   const discount = calculateCouponDiscount(coupon, product.price);
   const eligible = reasons.length === 0;
+  const firstPurchase = Boolean(coupon.firstPurchaseOnly);
+  const notes = firstPurchase ? [...reasons, ...soft, 'primeira-compra'] : [...reasons, ...soft];
   return {
     eligible,
-    guaranteed: eligible && !coupon.firstPurchaseOnly,
+    guaranteed: eligible && !firstPurchase && soft.length === 0,
     status,
-    reasons: coupon.firstPurchaseOnly ? [...reasons, 'primeira-compra'] : reasons,
+    reasons: notes,
     discount: discount.ok ? discount : null
   };
 }
@@ -226,6 +257,9 @@ export function selectBestCoupon(coupons, product, at = new Date()) {
     const amountA = a.evaluation.discount?.amount ?? -1;
     const amountB = b.evaluation.discount?.amount ?? -1;
     if (amountB !== amountA) return amountB - amountA;
+    const guaranteedA = a.evaluation.guaranteed ? 1 : 0;
+    const guaranteedB = b.evaluation.guaranteed ? 1 : 0;
+    if (guaranteedB !== guaranteedA) return guaranteedB - guaranteedA;
     const endA = a.coupon.expiresAt ? new Date(a.coupon.expiresAt).getTime() : Number.POSITIVE_INFINITY;
     const endB = b.coupon.expiresAt ? new Date(b.coupon.expiresAt).getTime() : Number.POSITIVE_INFINITY;
     return endA - endB;
@@ -255,6 +289,12 @@ export function applyCouponToOffer(offer, selection) {
   const conditions = [coupon.conditions].filter(Boolean);
   if (coupon.minPurchase != null) conditions.push(`Pedido mínimo R$ ${formatBRL(coupon.minPurchase)}`);
   if (coupon.firstPurchaseOnly) conditions.push('Sujeito a primeira compra');
+  if (selection.evaluation.reasons?.includes('categoria-ausente')) {
+    conditions.push('Categoria do produto não confirmada');
+  }
+  if (selection.evaluation.reasons?.includes('vendedor-ausente')) {
+    conditions.push('Vendedor não confirmado');
+  }
   if (discount && !selection.evaluation.guaranteed) {
     conditions.push('Preço final estimado; depende da conta');
   }
@@ -374,10 +414,7 @@ export class CouponService {
   }
 
   async associate(product, { persist = true, actorId, at = new Date() } = {}) {
-    const enriched = {
-      ...product,
-      marketplace: product?.marketplace || normalizeMarketplace(product?.store, product?.url)
-    };
+    const enriched = enrichProduct(product);
     let coupons = [];
     try {
       coupons = await this.list();
@@ -387,19 +424,17 @@ export class CouponService {
     }
 
     const existingCode = asText(enriched.coupon, 80);
-    let selection;
+    let selection = selectBestCoupon(coupons, enriched, at);
     if (existingCode) {
       const same = coupons.find((item) => item.code === existingCode.toUpperCase());
       if (same) {
         const evaluation = evaluateCouponEligibility(same, enriched, at);
-        selection = evaluation.eligible
-          ? { coupon: same, evaluation, skipped: [] }
-          : { coupon: null, evaluation, skipped: [{ coupon: same, evaluation }] };
-      } else {
-        selection = { coupon: null, evaluation: null, skipped: [] };
+        if (evaluation.eligible) {
+          selection = { coupon: same, evaluation, skipped: selection.skipped };
+        }
+      } else if (!selection.coupon) {
+        selection = { coupon: null, evaluation: null, skipped: selection.skipped };
       }
-    } else {
-      selection = selectBestCoupon(coupons, enriched, at);
     }
 
     const offer = existingCode && !selection.coupon
@@ -413,15 +448,32 @@ export class CouponService {
         }
       : applyCouponToOffer(enriched, selection);
 
-    if (persist && this.storage && selection.coupon && product?.id) {
+    if (persist && this.storage && product?.id) {
       await this.storage.update((db) => {
-        db.history.push({
-          at: nowIso(at),
-          action: 'coupon-associate',
-          offerId: product.id,
-          couponId: selection.coupon.id,
-          actorId: actorId ?? null
-        });
+        db.offers = Array.isArray(db.offers)
+          ? db.offers.map((item) => {
+              if (item.id !== product.id) return item;
+              return {
+                ...item,
+                coupon: offer.coupon ?? item.coupon,
+                couponConditions: offer.couponConditions ?? item.couponConditions,
+                couponMatch: offer.couponMatch ?? null,
+                couponEstimatedPrice: offer.couponEstimatedPrice ?? null,
+                couponDiscountAmount: offer.couponDiscountAmount ?? null,
+                couponGuaranteed: Boolean(offer.couponGuaranteed),
+                marketplace: offer.marketplace ?? item.marketplace
+              };
+            })
+          : db.offers;
+        if (selection.coupon) {
+          db.history.push({
+            at: nowIso(at),
+            action: 'coupon-associate',
+            offerId: product.id,
+            couponId: selection.coupon.id,
+            actorId: actorId ?? null
+          });
+        }
         return db;
       }).catch((error) => logger.warn('Falha ao registrar associação de cupom.', error.message));
     }

@@ -10,6 +10,7 @@ import {
 } from '../commands/admin.js';
 import { formatOfferPreview } from '../formatters/offer-message.js';
 import {
+  associateSessionOffer,
   clearSession,
   getSession,
   setSession
@@ -224,6 +225,7 @@ async function handleWizardCallback(bot, ctx, query, data, userId, chatId) {
     }
     session.step = 'preview';
     session.editingField = null;
+    await associateSessionOffer(ctx, session);
     setSession(userId, session);
     const options = await resolvePreviewOptions(ctx);
     const preview = previewPayload(session, options);

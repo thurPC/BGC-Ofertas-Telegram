@@ -27,12 +27,26 @@ function publicError(error) {
 }
 
 export class PublishingService {
-  constructor({ bot, config, offerService, templateService }) {
+  constructor({ bot, config, offerService, templateService, couponService }) {
     this.bot = bot;
     this.config = config;
     this.offerService = offerService;
     this.templateService = templateService;
+    this.couponService = couponService;
     this.inFlight = new Set();
+  }
+
+  async attachCoupon(offer, actorId) {
+    if (!this.couponService?.associate) return offer;
+    try {
+      const associated = await this.couponService.associate(offer, {
+        persist: Boolean(offer?.id),
+        actorId
+      });
+      return associated?.offer || offer;
+    } catch {
+      return offer;
+    }
   }
 
   async resolveTemplate() {
@@ -133,9 +147,10 @@ export class PublishingService {
     }
     for (const key of lockKeys) this.inFlight.add(key);
 
-    const needsImageReview = !offer.imageUrl;
+    const prepared = await this.attachCoupon(offer, actorId);
+    const needsImageReview = !prepared.imageUrl;
     try {
-      const result = await this.sendToChat(chatId, offer);
+      const result = await this.sendToChat(chatId, prepared);
       if (offer.id && this.offerService) {
         await this.offerService.markPublished(offer.id, { actorId });
       }
@@ -150,8 +165,9 @@ export class PublishingService {
 
   async preview(chatId, offer) {
     try {
-      const result = await this.sendToChat(chatId, offer);
-      return { ...result, needsImageReview: !offer.imageUrl };
+      const prepared = await this.attachCoupon(offer);
+      const result = await this.sendToChat(chatId, prepared);
+      return { ...result, needsImageReview: !prepared.imageUrl };
     } catch (error) {
       logger.warn('Falha na prévia.', error.message);
       return { ok: false, error: publicError(error) };

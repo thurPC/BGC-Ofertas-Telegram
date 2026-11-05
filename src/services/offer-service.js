@@ -296,6 +296,7 @@ export class OfferService {
           offer.couponEstimatedPrice = associated.offer.couponEstimatedPrice ?? null;
           offer.couponDiscountAmount = associated.offer.couponDiscountAmount ?? null;
           offer.couponGuaranteed = Boolean(associated.offer.couponGuaranteed);
+          offer.marketplace = associated.offer.marketplace ?? offer.marketplace;
         }
       } catch {
         // Cupons indisponíveis não interrompem o cadastro da oferta.
@@ -409,6 +410,7 @@ export class OfferService {
           next.couponEstimatedPrice = associated.offer.couponEstimatedPrice ?? null;
           next.couponDiscountAmount = associated.offer.couponDiscountAmount ?? null;
           next.couponGuaranteed = Boolean(associated.offer.couponGuaranteed);
+          next.marketplace = associated.offer.marketplace ?? next.marketplace;
         }
       } catch {
         // Cupons indisponíveis não interrompem a edição da oferta.

@@ -94,7 +94,7 @@ async function main() {
   const offerService = new OfferService(storage, { settingsService, couponService });
   const templateService = new TemplateService(storage);
   bot = createBot(config.token);
-  const publishingService = new PublishingService({ bot, config, offerService, templateService });
+  const publishingService = new PublishingService({ bot, config, offerService, templateService, couponService });
   const shopeeClient = createShopeeAffiliateClient(config);
   const sources = createConfiguredSources(config, { shopeeClient });
   scheduler = new SchedulerService({
