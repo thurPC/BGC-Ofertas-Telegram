@@ -71,8 +71,17 @@ function applyExpiry(offer, at = new Date()) {
 }
 
 export class OfferService {
-  constructor(storage) {
+  constructor(storage, { settingsService, couponService } = {}) {
     this.storage = storage;
+    this.settingsService = settingsService;
+    this.couponService = couponService;
+  }
+
+  async exclusionOptions() {
+    if (this.settingsService?.exclusionOptions) {
+      return this.settingsService.exclusionOptions();
+    }
+    return {};
   }
 
   async list() {
@@ -98,8 +107,9 @@ export class OfferService {
     if (!validation.ok) {
       return { ok: false, errors: validation.errors };
     }
-    if (isExcludedProduct(validation.offer)) {
-      return { ok: false, error: exclusionMessage(analyzeExclusion(validation.offer).reasons) };
+    const exclusionOptions = await this.exclusionOptions();
+    if (isExcludedProduct(validation.offer, exclusionOptions)) {
+      return { ok: false, error: exclusionMessage(analyzeExclusion(validation.offer, exclusionOptions).reasons) };
     }
 
     const db = await this.storage.read();
@@ -118,8 +128,28 @@ export class OfferService {
       publishedAt: null,
       createdBy: actorId ?? null,
       source: input.source ?? 'manual',
-      discountPercent: calculateDiscount(validation.offer.previousPrice, validation.offer.price)
+      discountPercent: calculateDiscount(validation.offer.previousPrice, validation.offer.price),
+      couponMatch: input.couponMatch ?? null,
+      couponEstimatedPrice: input.couponEstimatedPrice ?? null,
+      couponDiscountAmount: input.couponDiscountAmount ?? null,
+      couponGuaranteed: Boolean(input.couponGuaranteed)
     };
+
+    if (this.couponService?.associate) {
+      try {
+        const associated = await this.couponService.associate(offer, { persist: false, actorId });
+        if (associated?.offer) {
+          offer.coupon = associated.offer.coupon ?? offer.coupon;
+          offer.couponConditions = associated.offer.couponConditions ?? offer.couponConditions;
+          offer.couponMatch = associated.offer.couponMatch ?? offer.couponMatch;
+          offer.couponEstimatedPrice = associated.offer.couponEstimatedPrice ?? null;
+          offer.couponDiscountAmount = associated.offer.couponDiscountAmount ?? null;
+          offer.couponGuaranteed = Boolean(associated.offer.couponGuaranteed);
+        }
+      } catch {
+        // Cupons indisponíveis não interrompem o cadastro da oferta.
+      }
+    }
 
     await this.storage.update((current) => {
       current.offers.push(offer);
@@ -184,8 +214,9 @@ export class OfferService {
     const merged = { ...current, ...patch };
     const validation = validateOfferInput(merged);
     if (!validation.ok) return { ok: false, errors: validation.errors };
-    if (isExcludedProduct(validation.offer)) {
-      return { ok: false, error: exclusionMessage(analyzeExclusion(validation.offer).reasons) };
+    const exclusionOptions = await this.exclusionOptions();
+    if (isExcludedProduct(validation.offer, exclusionOptions)) {
+      return { ok: false, error: exclusionMessage(analyzeExclusion(validation.offer, exclusionOptions).reasons) };
     }
 
     const next = {
@@ -195,6 +226,22 @@ export class OfferService {
       updatedAt: nowIso(),
       discountPercent: calculateDiscount(validation.offer.previousPrice, validation.offer.price)
     };
+
+    if (this.couponService?.associate) {
+      try {
+        const associated = await this.couponService.associate(next, { persist: false, actorId });
+        if (associated?.offer) {
+          next.coupon = associated.offer.coupon ?? next.coupon;
+          next.couponConditions = associated.offer.couponConditions ?? next.couponConditions;
+          next.couponMatch = associated.offer.couponMatch ?? null;
+          next.couponEstimatedPrice = associated.offer.couponEstimatedPrice ?? null;
+          next.couponDiscountAmount = associated.offer.couponDiscountAmount ?? null;
+          next.couponGuaranteed = Boolean(associated.offer.couponGuaranteed);
+        }
+      } catch {
+        // Cupons indisponíveis não interrompem a edição da oferta.
+      }
+    }
 
     await this.storage.update((db) => {
       db.offers = db.offers.map((item) => (item.id === id ? next : item));

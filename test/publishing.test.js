@@ -140,9 +140,9 @@ test('sinaliza revisão administrativa quando não há imagem do produto', async
   assert.equal(result.needsImageReview, true);
 });
 
-test('recusa publicação sem link válido', () => {
+test('recusa publicação sem link válido', async () => {
   const service = new PublishingService({ bot: {}, config: { channelId: '-100' } });
-  const result = service.canPublish({ name: 'X', price: 10, store: 'Y', status: 'pronta' });
+  const result = await service.canPublish({ name: 'X', price: 10, store: 'Y', status: 'pronta' });
   assert.equal(result.ok, false);
 });
 

@@ -34,7 +34,14 @@ export function extractionSummary({ offer = {}, platform, warnings = [] }) {
   lines.push(`🏪 Loja: ${offer.store ? escapeHtml(offer.store) : '<i>não identificada</i>'}`);
   lines.push(offer.price != null ? `💰 Preço: ${brl(offer.price)}` : '💰 Preço: <i>precisa ser informado</i>');
   if (offer.previousPrice != null) lines.push(`Preço anterior: ${brl(offer.previousPrice)}`);
-  lines.push(`🎟️ Cupom: ${offer.coupon ? escapeHtml(offer.coupon) : '<i>nenhum</i>'}`);
+  if (offer.coupon) {
+    const extra = offer.couponEstimatedPrice != null
+      ? ` (${offer.couponGuaranteed ? 'com cupom' : 'estimado'} R$ ${escapeHtml(String(offer.couponEstimatedPrice).replace('.', ','))})`
+      : '';
+    lines.push(`🎟️ Cupom: ${escapeHtml(offer.coupon)}${extra}`);
+  } else {
+    lines.push('🎟️ Cupom: <i>nenhum</i>');
+  }
   lines.push(`🖼️ Imagem: ${offer.imageUrl ? 'encontrada' : '<i>não encontrada</i>'}`);
   if (offer.asin) lines.push(`ASIN: <code>${escapeHtml(offer.asin)}</code>`);
   lines.push('');

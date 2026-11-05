@@ -5,11 +5,13 @@ import { findDuplicates } from './offer-service.js';
 import { validateOfferInput } from './validation-service.js';
 
 export class SchedulerService {
-  constructor({ config, sources, offerService, publishingService, onTick }) {
+  constructor({ config, sources, offerService, publishingService, settingsService, couponService, onTick }) {
     this.config = config;
     this.sources = sources || [];
     this.offerService = offerService;
     this.publishingService = publishingService;
+    this.settingsService = settingsService;
+    this.couponService = couponService;
     this.onTick = onTick;
     this.timer = null;
     this.running = false;
@@ -31,7 +33,7 @@ export class SchedulerService {
       enabled: Boolean(this.config.autoPublish),
       sources: this.sources.map((source) => source.describe()),
       note: this.config.autoPublish
-        ? 'Publicação automática habilitada por configuração, mas só executa com fonte válida e confirmação operacional.'
+        ? 'Publicação automática habilitada por configuração, mas só executa no horário definido e com fonte válida.'
         : 'Publicação automática desativada por padrão. O feed pode ser lido e importado como oferta pronta, sem publicar no canal.'
     };
   }
@@ -56,6 +58,7 @@ export class SchedulerService {
   async collectFromSources() {
     const collected = [];
     const sourceErrors = [];
+    const coupons = [];
     for (const source of this.sources) {
       if (!source.isConfigured()) continue;
       const result = typeof source.fetch === 'function'
@@ -70,8 +73,9 @@ export class SchedulerService {
         continue;
       }
       collected.push(...(result.offers || []));
+      if (Array.isArray(result.coupons)) coupons.push(...result.coupons);
     }
-    return { collected, sourceErrors };
+    return { collected, sourceErrors, coupons };
   }
 
   async importFromSources({ publish = false } = {}) {
@@ -88,15 +92,26 @@ export class SchedulerService {
     }
 
     const existing = await this.offerService.list();
-    const { collected, sourceErrors } = await this.collectFromSources();
-    const blockedItems = collected.filter((item) => isExcludedProduct(item, this.config));
-    const contentBlocked = blockedItems.length;
+    const { collected, sourceErrors, coupons } = await this.collectFromSources();
+    if (this.couponService && coupons?.length) {
+      try {
+        await this.couponService.upsertMany(coupons, { actorId: 'scheduler', source: 'json-feed' });
+        await this.couponService.expireStale({ actorId: 'scheduler' });
+      } catch (error) {
+        logger.warn('Falha ao atualizar cupons. As ofertas seguem normalmente.', error.message);
+      }
+    }
+    const runtimeConfig = this.settingsService
+      ? await this.settingsService.runtimeConfig()
+      : this.config;
+    const blockedItems = collected.filter((item) => isExcludedProduct(item, runtimeConfig));
+    let contentBlocked = blockedItems.length;
     if (contentBlocked > 0) {
       logger.info(`Filtro de conteúdo: ${contentBlocked} item(ns) de livro/publicação descartado(s) na seleção.`, {
         names: blockedItems.map((item) => item.name).slice(0, 20)
       });
     }
-    const filtered = applyOfferFilters(collected, this.config).slice(0, this.config.maxOffersPerRun);
+    const filtered = applyOfferFilters(collected, runtimeConfig).slice(0, this.config.maxOffersPerRun);
     const errors = [...sourceErrors];
     let imported = 0;
     let published = 0;
@@ -109,7 +124,7 @@ export class SchedulerService {
         continue;
       }
       // Defesa em profundidade: nada que seja livro/publicação passa daqui.
-      const exclusion = analyzeExclusion(validation.offer, this.config);
+      const exclusion = analyzeExclusion(validation.offer, runtimeConfig);
       if (exclusion.excluded) {
         contentBlocked += 1;
         continue;
@@ -167,7 +182,15 @@ export class SchedulerService {
         };
       }
       if (!this.config.autoPublish) {
-        const { collected, sourceErrors } = await this.collectFromSources();
+        const { collected, sourceErrors, coupons } = await this.collectFromSources();
+        if (this.couponService && coupons?.length) {
+          try {
+            await this.couponService.upsertMany(coupons, { actorId: 'scheduler', source: 'json-feed' });
+            await this.couponService.expireStale({ actorId: 'scheduler' });
+          } catch (error) {
+            logger.warn('Falha ao atualizar cupons. As ofertas seguem normalmente.', error.message);
+          }
+        }
         return {
           ok: true,
           fetched: collected.length,
@@ -177,7 +200,10 @@ export class SchedulerService {
           note: 'Publicação automática desativada. O feed foi consultado apenas para leitura. Nada foi importado nem publicado no canal. Use importação administrativa ou OFFER_AUTO_PUBLISH=true após revisão.'
         };
       }
-      if (!isWithinAllowedHours(new Date(), this.config.allowedHours)) {
+      const allowedHours = this.settingsService
+        ? await this.settingsService.allowedHours()
+        : this.config.allowedHours;
+      if (!isWithinAllowedHours(new Date(), allowedHours)) {
         return { ok: true, fetched: 0, imported: 0, published: 0, note: 'Fora do horário permitido.' };
       }
       return this.importFromSources({ publish: true });

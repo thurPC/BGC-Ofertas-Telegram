@@ -259,8 +259,8 @@ function isDeviceHardware(text) {
 }
 
 export function analyzeExclusion(product, options = {}) {
-  const extraCategories = options.extraCategories || [];
-  const extraKeywords = options.extraKeywords || [];
+  const extraCategories = options.extraCategories || options.excludedCategories || [];
+  const extraKeywords = options.extraKeywords || options.excludedKeywords || [];
   const categories = [...DEFAULT_EXCLUDED_CATEGORIES, ...extraCategories];
   const keywords = [...DEFAULT_EXCLUDED_KEYWORDS, ...extraKeywords];
 

@@ -1,5 +1,6 @@
 import { isAdmin } from '../config.js';
 import { logger } from '../logger.js';
+import { getSettingsSession } from './settings.js';
 import { escapeHtml } from '../services/validation-service.js';
 import {
   BRAND,
@@ -230,6 +231,7 @@ export function registerTemplateCommand(bot, ctx) {
       const userId = msg.from?.id;
       if (!userId) return;
       if (!isAdmin(ctx.config, userId)) return;
+      if (getSettingsSession(userId)) return;
       const session = getModelSession(userId);
       if (!session) return;
 

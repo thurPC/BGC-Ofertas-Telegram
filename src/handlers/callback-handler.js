@@ -22,6 +22,8 @@ import {
   resolvePreviewOptions,
   wizardPrompt
 } from './wizard.js';
+import { describeOperatingHours } from '../services/settings-service.js';
+import { categoriesNote } from '../commands/settings.js';
 import { logger } from '../logger.js';
 
 function safeAnswer(bot, query, text) {
@@ -74,13 +76,16 @@ export function registerCallbackHandler(bot, ctx) {
         await safeAnswer(bot, query);
         const stats = await ctx.offerService.operationalStatus();
         const scheduler = ctx.scheduler?.describe?.() || {};
+        const settings = ctx.settingsService ? await ctx.settingsService.get() : { operatingHours: null, categories: [] };
         await bot.sendMessage(
           chatId,
           formatStatus(stats, {
             nodeEnv: ctx.config.nodeEnv,
             hasChannel: Boolean(ctx.config.channelId),
             adminCount: ctx.config.adminIds.length,
-            autoNote: scheduler.note
+            autoNote: scheduler.note,
+            hoursNote: describeOperatingHours(settings.operatingHours),
+            categoriesNote: categoriesNote(settings.categories)
           }),
           { parse_mode: 'HTML' }
         );

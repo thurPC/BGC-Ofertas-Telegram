@@ -9,10 +9,13 @@ import { registerPublicCommands } from './src/commands/public.js';
 import { registerMessageHandler } from './src/handlers/message-handler.js';
 import { registerCallbackHandler } from './src/handlers/callback-handler.js';
 import { registerTemplateCallbacks, registerTemplateCommand } from './src/commands/template.js';
+import { registerSettingsCallbacks, registerSettingsCommand } from './src/commands/settings.js';
 import { OfferService } from './src/services/offer-service.js';
 import { PublishingService } from './src/services/publishing-service.js';
 import { SchedulerService } from './src/services/scheduler-service.js';
 import { TemplateService } from './src/services/template-service.js';
+import { SettingsService } from './src/services/settings-service.js';
+import { CouponService } from './src/services/coupon-service.js';
 import { JsonStorage } from './src/storage/json-storage.js';
 import { createConfiguredSources } from './src/sources/json-feed-source.js';
 import { InstanceLock } from './src/process-lock.js';
@@ -83,7 +86,9 @@ async function main() {
   const storage = new JsonStorage(path.join(config.dataDir, 'offers.json'));
   await storage.init();
 
-  const offerService = new OfferService(storage);
+  const settingsService = new SettingsService(storage, config);
+  const couponService = new CouponService(storage);
+  const offerService = new OfferService(storage, { settingsService, couponService });
   const templateService = new TemplateService(storage);
   bot = createBot(config.token, { polling: true });
   const publishingService = new PublishingService({ bot, config, offerService, templateService });
@@ -92,16 +97,20 @@ async function main() {
     config,
     sources,
     offerService,
-    publishingService
+    publishingService,
+    settingsService,
+    couponService
   });
 
-  const ctx = { config, offerService, publishingService, scheduler, templateService };
+  const ctx = { config, offerService, publishingService, scheduler, templateService, settingsService, couponService };
 
   registerPublicCommands(bot);
   registerMessageHandler(bot, ctx);
   registerCallbackHandler(bot, ctx);
   registerTemplateCommand(bot, ctx);
   registerTemplateCallbacks(bot, ctx);
+  registerSettingsCommand(bot, ctx);
+  registerSettingsCallbacks(bot, ctx);
 
   await bot.setMyCommands([
     { command: 'start', description: 'Apresentação do BGC Ofertas' },

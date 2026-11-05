@@ -38,6 +38,8 @@ export function normalizeFetchedOffer(raw, sourceName) {
     pixPrice: raw?.pixPrice ?? null,
     coupon: preserveText(raw?.coupon),
     couponConditions: preserveText(raw?.couponConditions ?? raw?.conditions),
+    marketplace: preserveText(raw?.marketplace ?? raw?.platform),
+    seller: preserveText(raw?.seller),
     imageUrl: preserveText(raw?.imageUrl ?? raw?.image),
     url: preserveText(raw?.url ?? raw?.link),
     store: preserveText(raw?.store ?? raw?.shop) || sourceName,

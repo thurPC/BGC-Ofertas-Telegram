@@ -266,15 +266,15 @@ test('OfferService.create recusa livro mesmo no cadastro manual', async () => {
 
 test('PublishingService.canPublish recusa livro e aceita dispositivo', async () => {
   const service = new PublishingService({});
-  const blocked = service.canPublish(product('Harold Bloom - Livro', { status: 'pronta' }));
+  const blocked = await service.canPublish(product('Harold Bloom - Livro', { status: 'pronta' }));
   assert.equal(blocked.ok, false);
   assert.match(blocked.error, /bloqueado/i);
 
-  const kindleWithoutUrl = service.canPublish(product('Kindle Paperwhite', { url: null, status: 'pronta' }));
+  const kindleWithoutUrl = await service.canPublish(product('Kindle Paperwhite', { url: null, status: 'pronta' }));
   assert.equal(kindleWithoutUrl.ok, false);
   assert.match(kindleWithoutUrl.error, /link/i); // passa o filtro, falha por falta de URL
 
-  const kindleWithUrl = service.canPublish(product('Kindle Paperwhite', { url: 'https://loja.example.com/k', status: 'pronta' }));
+  const kindleWithUrl = await service.canPublish(product('Kindle Paperwhite', { url: 'https://loja.example.com/k', status: 'pronta' }));
   assert.equal(kindleWithUrl.ok, true);
 });
 

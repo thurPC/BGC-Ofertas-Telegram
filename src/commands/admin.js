@@ -11,11 +11,15 @@ export const ADMIN_HELP_TEXT = [
   '/ofertas — lista ofertas cadastradas',
   '/status — estado operacional, sem dados sensíveis',
   '/modelo — edita o modelo de publicação (texto, emojis, ordem, preço, link do canal)',
+  '/categorias — painel de categorias (adicionar, ativar, desativar e remover item)',
+  '/horario — horário de operação do bot no formato 24h, sem minutos',
   '/ajuda_admin — esta mensagem',
   '',
   'Fluxo de cadastro: nome, preço atual, preço anterior (opcional), PIX (opcional), cupom e condições, imagem, link, loja e validade.',
   'Ao final há prévia. Só publica depois de confirmação explícita.',
   'O modelo visual (BGC PROMOS) é editável com /modelo: texto, emojis, ordem dos campos, formato de preço, campos opcionais e o link do canal. É possível restaurar o padrão.',
+  'Categorias extras podem ser adicionadas, ativadas, desativadas ou removidas no painel. Só as ativas entram no filtro.',
+  'O horário de operação usa horas cheias (0 a 23), sem minutos. Fora desse intervalo a publicação automática não roda.',
   'A publicação no canal vai com foto (quando houver) e o link no texto, sem botões inline, para não interferir nos comentários do grupo de discussão.',
   '',
   'A busca automática lê o feed JSON em OFFER_FEED_URL. A publicação no canal permanece desativada por padrão (OFFER_AUTO_PUBLISH=false): o feed é consultado, mas nada entra no canal sem essa flag ou /publicar.'
@@ -33,6 +37,10 @@ export function adminKeyboard() {
         { text: '🕘 Histórico', callback_data: 'admin:history' }
       ],
       [{ text: '🎨 Modelo de publicação', callback_data: 'modelo:voltar' }],
+      [
+        { text: '🏷️ Categorias', callback_data: 'cat:home' },
+        { text: '⏰ Horário', callback_data: 'hours:home' }
+      ],
       [{ text: '🆘 Ajuda admin', callback_data: 'admin:help' }]
     ]
   };
@@ -112,6 +120,8 @@ export function formatOfferList(offers) {
 
 export function formatStatus(stats, extra = {}) {
   const auto = extra.autoNote || 'Publicação automática desativada.';
+  const hours = extra.hoursNote ? `\n${escapeHtml(extra.hoursNote)}` : '';
+  const categories = extra.categoriesNote ? `\n${escapeHtml(extra.categoriesNote)}` : '';
   return [
     '📊 <b>Status operacional</b>',
     '',
@@ -126,7 +136,7 @@ export function formatStatus(stats, extra = {}) {
     `Canal configurado: ${extra.hasChannel ? 'sim' : 'não'}`,
     `Administradores: ${extra.adminCount ?? 0}`,
     '',
-    escapeHtml(auto)
+    escapeHtml(auto) + hours + categories
   ].join('\n');
 }
 

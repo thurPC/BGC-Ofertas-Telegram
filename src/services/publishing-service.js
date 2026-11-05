@@ -42,9 +42,16 @@ export class PublishingService {
     });
   }
 
-  canPublish(offer) {
+  async exclusionOptions() {
+    if (this.offerService?.exclusionOptions) {
+      return this.offerService.exclusionOptions();
+    }
+    return {};
+  }
+
+  async canPublish(offer) {
     if (!offer) return { ok: false, error: 'Oferta não encontrada.' };
-    const exclusion = analyzeExclusion(offer);
+    const exclusion = analyzeExclusion(offer, await this.exclusionOptions());
     if (exclusion.excluded) {
       return { ok: false, error: exclusionMessage(exclusion.reasons) };
     }
@@ -90,7 +97,7 @@ export class PublishingService {
   }
 
   async publish(offer, { actorId, targetChatId } = {}) {
-    const check = this.canPublish(offer);
+    const check = await this.canPublish(offer);
     if (!check.ok) return check;
 
     const chatId = targetChatId || this.config.channelId;

@@ -6,9 +6,16 @@ const DEFAULT_DB = {
   version: 1,
   offers: [],
   history: [],
+  coupons: [],
   settings: {
     autoPublishEnabled: false,
-    template: null
+    template: null,
+    categories: [],
+    operatingHours: {
+      mode: 'always',
+      startHour: 8,
+      endHour: 22
+    }
   }
 };
 
@@ -92,9 +99,16 @@ export class JsonStorage {
       version: Number.isInteger(data.version) ? data.version : 1,
       offers: Array.isArray(data.offers) ? data.offers : [],
       history: Array.isArray(data.history) ? data.history : [],
+      coupons: Array.isArray(data.coupons) ? data.coupons : [],
       settings: {
         autoPublishEnabled: Boolean(data.settings?.autoPublishEnabled),
-        template: data.settings?.template ?? null
+        template: data.settings?.template ?? null,
+        categories: Array.isArray(data.settings?.categories) ? data.settings.categories : [],
+        operatingHours: data.settings?.operatingHours ?? {
+          mode: 'always',
+          startHour: 8,
+          endHour: 22
+        }
       }
     };
   }

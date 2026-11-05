@@ -25,6 +25,8 @@ import {
   missingFieldsPrompt
 } from '../services/offer-automation.js';
 import { analyzeExclusion, isExcludedProduct } from '../services/exclusion-filter.js';
+import { describeOperatingHours } from '../services/settings-service.js';
+import { categoriesNote, clearSettingsSession, getSettingsSession } from '../commands/settings.js';
 import { logger } from '../logger.js';
 
 const SESSIONS = new Map();
@@ -63,8 +65,11 @@ export async function handleOfferLink(bot, ctx, chatId, userId, link) {
 
   // Filtro permanente: livros, e-books, audiolivros, mangás, HQs, revistas,
   // apostilas, enciclopédias e dicionários não entram no fluxo de publicação.
-  if (isExcludedProduct(analysis.offer)) {
-    const exclusion = analyzeExclusion(analysis.offer);
+  const exclusionOptions = ctx.settingsService
+    ? await ctx.settingsService.exclusionOptions()
+    : {};
+  if (isExcludedProduct(analysis.offer, exclusionOptions)) {
+    const exclusion = analyzeExclusion(analysis.offer, exclusionOptions);
     logger.info('Link bloqueado pelo filtro de conteúdo.', exclusion.reasons);
     await bot.sendMessage(chatId, blockedOfferMessage(exclusion.reasons), {
       parse_mode: 'HTML',
@@ -73,7 +78,17 @@ export async function handleOfferLink(bot, ctx, chatId, userId, link) {
     return { ok: false, blocked: true, reasons: exclusion.reasons };
   }
 
-  const session = createExtractionSession(userId, analysis.offer);
+  let extracted = analysis.offer;
+  if (ctx.couponService?.associate) {
+    try {
+      const associated = await ctx.couponService.associate(extracted, { persist: false, actorId: userId });
+      if (associated?.offer) extracted = associated.offer;
+    } catch {
+      // Cupons indisponíveis não interrompem o cadastro automático.
+    }
+  }
+
+  const session = createExtractionSession(userId, extracted);
   setSession(userId, session);
 
   await bot.sendMessage(chatId, extractionSummary(analysis), {
@@ -122,6 +137,7 @@ export function registerMessageHandler(bot, ctx) {
       const userId = msg.from?.id;
       if (!userId) return;
       if (!isAdmin(ctx.config, userId)) return;
+      if (getSettingsSession(userId)) return;
 
       const session = getSession(userId);
 
@@ -200,6 +216,11 @@ export function registerMessageHandler(bot, ctx) {
 
   bot.onText(/^\/cancelar(?:@\w+)?(?:\s|$)/, async (msg) => {
     if (!isAdmin(ctx.config, msg.from?.id)) return denyAdmin(bot, msg.chat.id);
+    if (getSettingsSession(msg.from.id)) {
+      clearSettingsSession(msg.from.id);
+      await bot.sendMessage(msg.chat.id, 'Configuração cancelada.');
+      return;
+    }
     if (!getSession(msg.from.id)) {
       await bot.sendMessage(msg.chat.id, 'Não há cadastro em andamento.');
       return;
@@ -218,13 +239,16 @@ export function registerMessageHandler(bot, ctx) {
     if (!isAdmin(ctx.config, msg.from?.id)) return denyAdmin(bot, msg.chat.id);
     const stats = await ctx.offerService.operationalStatus();
     const scheduler = ctx.scheduler?.describe?.() || {};
+    const settings = ctx.settingsService ? await ctx.settingsService.get() : { operatingHours: null, categories: [] };
     await bot.sendMessage(
       msg.chat.id,
       formatStatus(stats, {
         nodeEnv: ctx.config.nodeEnv,
         hasChannel: Boolean(ctx.config.channelId),
         adminCount: ctx.config.adminIds.length,
-        autoNote: scheduler.note
+        autoNote: scheduler.note,
+        hoursNote: describeOperatingHours(settings.operatingHours),
+        categoriesNote: categoriesNote(settings.categories)
       }),
       { parse_mode: 'HTML' }
     );

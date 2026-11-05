@@ -147,7 +147,12 @@ function renderField(key, offer, template, channelLink) {
       const coupon = String(offer?.coupon ?? '').trim();
       if (!coupon) return null;
       const prefix = label ? `${escapeHtml(label)}: ` : '';
-      return { inline, text: withEmoji(`${prefix}${escapeHtml(coupon)}`) };
+      let text = `${prefix}${escapeHtml(coupon)}`;
+      if (offer.couponEstimatedPrice != null) {
+        const priceLabel = offer.couponGuaranteed ? 'com cupom' : 'estimado com cupom';
+        text += ` (${priceLabel} ${escapeHtml(formatPriceValue(offer.couponEstimatedPrice, template.priceFormat))})`;
+      }
+      return { inline, text: withEmoji(text) };
     }
     case 'previousPrice': {
       if (!template.optional.previousPrice || offer?.previousPrice == null) return null;

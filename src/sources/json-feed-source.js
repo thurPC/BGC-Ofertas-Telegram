@@ -5,6 +5,7 @@ import {
   exclusionMessage,
   isExcludedProduct
 } from '../services/exclusion-filter.js';
+import { couponFromOfferFields, extractFeedCoupons, normalizeCoupon } from '../services/coupon-service.js';
 import { calculateDiscount, validateOfferInput } from '../services/validation-service.js';
 
 const DEFAULT_TIMEOUT_MS = 12000;
@@ -28,6 +29,7 @@ export function parseFeedPayload(payload, sourceName = 'json-feed') {
     return {
       ok: false,
       offers: [],
+      coupons: [],
       errors: [extracted.error],
       reason: 'invalid-structure',
       skipped: 0
@@ -35,6 +37,7 @@ export function parseFeedPayload(payload, sourceName = 'json-feed') {
   }
 
   const offers = [];
+  const coupons = [];
   const errors = [];
   let skipped = 0;
 
@@ -75,13 +78,21 @@ export function parseFeedPayload(payload, sourceName = 'json-feed') {
       url: normalized.url || validation.offer.url,
       imageUrl: normalized.imageUrl || validation.offer.imageUrl,
       externalId: normalized.externalId,
+      marketplace: normalized.marketplace,
       source: sourceName,
       fetchedAt: normalized.fetchedAt,
       discountPercent: calculateDiscount(validation.offer.previousPrice, validation.offer.price)
     });
+    const fromOffer = couponFromOfferFields(normalized, { source: sourceName });
+    if (fromOffer) coupons.push(fromOffer);
   });
 
-  return { ok: true, offers, errors, skipped, reason: null };
+  for (const raw of extractFeedCoupons(payload)) {
+    const coupon = normalizeCoupon(raw, { source: sourceName });
+    if (coupon) coupons.push(coupon);
+  }
+
+  return { ok: true, offers, coupons, errors, skipped, reason: null };
 }
 
 function abortReason(error) {
@@ -130,6 +141,7 @@ export class JsonFeedSource extends OfferSource {
       return {
         ok: true,
         offers: [],
+        coupons: [],
         errors: [],
         skipped: 0,
         reason: 'not-configured',
@@ -141,6 +153,7 @@ export class JsonFeedSource extends OfferSource {
       return {
         ok: false,
         offers: [],
+        coupons: [],
         errors: ['Cliente HTTP indisponível.'],
         skipped: 0,
         reason: 'network',
@@ -160,6 +173,7 @@ export class JsonFeedSource extends OfferSource {
         return {
           ok: false,
           offers: [],
+          coupons: [],
           errors: [`HTTP ${response.status}`],
           skipped: 0,
           reason: 'http-error',
@@ -172,6 +186,7 @@ export class JsonFeedSource extends OfferSource {
         return {
           ok: false,
           offers: [],
+          coupons: [],
           errors: ['Resposta vazia do feed JSON.'],
           skipped: 0,
           reason: 'invalid-json',
@@ -187,6 +202,7 @@ export class JsonFeedSource extends OfferSource {
         return {
           ok: false,
           offers: [],
+          coupons: [],
           errors: ['JSON inválido.'],
           skipped: 0,
           reason: 'invalid-json',
@@ -202,6 +218,7 @@ export class JsonFeedSource extends OfferSource {
       return {
         ok: false,
         offers: [],
+        coupons: [],
         errors: [reason === 'timeout' ? 'Tempo esgotado ao consultar o feed.' : 'Falha de rede ao consultar o feed.'],
         skipped: 0,
         reason,
