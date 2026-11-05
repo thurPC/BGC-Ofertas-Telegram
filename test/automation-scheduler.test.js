@@ -346,3 +346,46 @@ test('mensagem automática segue o modelo BGC PROMOS', () => {
   assert.match(html, /https:\/\/s\.shopee\.com\.br\/headset/);
   assert.match(html, /Compartilhe com os amigos/);
 });
+
+test('falha de autenticação na Shopee bloqueia a execução sem publicar nada', async () => {
+  const { service } = await tempService();
+  let publishCalls = 0;
+  const failingSource = {
+    name: 'shopee-open-api',
+    isConfigured() {
+      return true;
+    },
+    describe() {
+      return { name: 'shopee-open-api', configured: true };
+    },
+    async fetch() {
+      return {
+        ok: false,
+        offers: [],
+        errors: [{ message: 'Invalid Authorization Header', code: 10020 }],
+        reason: 'auth-error'
+      };
+    }
+  };
+  const scheduler = new SchedulerService({
+    config: config({ autoPublish: true, maxOffersPerRun: 5, publishGapSeconds: 0 }),
+    sources: [failingSource],
+    offerService: service,
+    publishingService: {
+      async publish() {
+        publishCalls += 1;
+        return { ok: true };
+      }
+    },
+    sleepFn: async () => undefined
+  });
+  const result = await scheduler.run();
+  assert.equal(result.ok, true);
+  assert.equal(result.fetched, 0);
+  assert.equal(result.selected, 0);
+  assert.equal(publishCalls, 0, 'nada deve ser publicado quando a fonte falha');
+  assert.equal(result.imported, 0);
+  assert.ok(result.errors.length >= 1);
+  const stored = await service.list();
+  assert.equal(stored.length, 0, 'nada deve ser importado quando a fonte falha');
+});

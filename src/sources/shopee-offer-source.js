@@ -155,7 +155,7 @@ export class ShopeeOfferSource extends OfferSource {
           error: result.error,
           code: result.code ?? null
         });
-        if (result.reason === 'auth-error') break;
+        if (result.reason === 'auth-error' || result.reason === 'system-error') break;
         continue;
       }
       offers.push(...result.offers);

@@ -105,6 +105,29 @@ test('propaga mensagem GraphQL e interrompe após erro de autenticação', async
   assert.equal(calls, 1);
 });
 
+test('interrompe a busca após erro de sistema (10000)', async () => {
+  let calls = 0;
+  const source = new ShopeeOfferSource({
+    appId: '1',
+    secret: 'x',
+    keywords: ['games', 'tecnologia'],
+    pageDelayMs: 0,
+    keywordDelayMs: 0,
+    fetchImpl: async () => {
+      calls += 1;
+      return response({
+        errors: [{ message: 'System error', extensions: { code: 10000 } }]
+      });
+    }
+  });
+  const result = await source.fetch();
+  assert.equal(result.ok, true);
+  assert.equal(result.offers.length, 0);
+  assert.equal(result.errors[0].reason, 'system-error');
+  assert.equal(result.errors[0].code, 10000);
+  assert.equal(calls, 1, 'deve interromper a busca após erro de sistema');
+});
+
 test('não faz chamada se as credenciais não existem', async () => {
   const source = new ShopeeOfferSource({
     keywords: ['casa'],

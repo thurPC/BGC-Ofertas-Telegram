@@ -125,6 +125,7 @@ export function loadConfig(env = process.env) {
     shopeeApiUrl: trim(env.SHOPEE_API_URL) || 'https://open-api.affiliate.shopee.com.br/graphql',
     shopeeSubIds: parseCsv(env.SHOPEE_SUB_IDS),
     shopeeKeywords: shopeeKeywords.length ? shopeeKeywords : defaultShopeeKeywords,
+    shopeeClockSkewSeconds: parseNumber(env.SHOPEE_CLOCK_SKEW_SECONDS) || 0,
     maxPrice: parseNumber(env.OFFER_MAX_PRICE),
     minDiscountPercent: parseNumber(env.OFFER_MIN_DISCOUNT_PERCENT),
     allowedStores: parseCsv(env.OFFER_ALLOWED_STORES).map((item) => item.toLowerCase()),

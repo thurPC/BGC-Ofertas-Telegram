@@ -86,6 +86,7 @@ ADMIN_IDS=123456789,987654321
 | `SHOPEE_API_URL` | não | Padrão: `https://open-api.affiliate.shopee.com.br/graphql` |
 | `SHOPEE_SUB_IDS` | não | Sub IDs de rastreamento, separados por vírgula |
 | `SHOPEE_SEARCH_KEYWORDS` | não | Termos das categorias Tecnologia, Informática, Games, Eletrônicos e Casa |
+| `SHOPEE_CLOCK_SKEW_SECONDS` | não | Compensa diferença de relógio com a Shopee (código 10020 "Invalid Timestamp"). Padrão: `0` |
 | `DATA_DIR` | não | Pasta dos JSON. Padrão: `./data` |
 | `LOG_LEVEL` | não | `error`, `warn`, `info` ou `debug` |
 | `OFFER_FEED_URL` | não | URL https de um feed JSON **autorizado** |

@@ -6,8 +6,30 @@ export const DEFAULT_TIMEOUT_MS = 12000;
 export const MAX_BODY_BYTES = 256_000;
 export const MAX_LIMIT = 50;
 
+// Códigos de erro da Shopee Affiliate Open API (tabela oficial):
+// - 10000: System error (falha interna do serviço Shopee)
+// - 10010: Request parsing error (query inválida, sintaxe incorreta)
+// - 10020: Identity authentication error (assinatura incorreta/expirou,
+//          header de autorização inválido, timestamp inválido, app desativado)
+// - 10030: Trigger traffic limiting (rate limit)
+// - 11000: Business processing error
+export const SHOPEE_ERROR_CODES = Object.freeze({
+  SYSTEM_ERROR: 10000,
+  REQUEST_PARSING: 10010,
+  INVALID_AUTH_HEADER: 10020,
+  RATE_LIMIT: 10030,
+  BUSINESS_ERROR: 11000
+});
+
 const RETRYABLE_REASONS = new Set(['timeout', 'network', 'http-error', 'rate-limited']);
-const AUTH_CODES = new Set([10010, 10020, 10030]);
+const AUTH_CODES = new Set([
+  SHOPEE_ERROR_CODES.INVALID_AUTH_HEADER
+]);
+const NON_RETRYABLE_CODES = new Set([
+  SHOPEE_ERROR_CODES.SYSTEM_ERROR,
+  SHOPEE_ERROR_CODES.REQUEST_PARSING,
+  SHOPEE_ERROR_CODES.INVALID_AUTH_HEADER
+]);
 
 function asText(value) {
   return String(value ?? '').trim();
@@ -89,6 +111,10 @@ export function extractShopeeIds(url) {
   return { shopId: match[1], itemId: match[2] };
 }
 
+// Assinatura da Shopee Affiliate Open API (conferida com a documentação oficial):
+// signature = sha256hex(AppId + Timestamp + Body + Secret)
+// e o header usa  SHA256 Credential=<AppId>, Timestamp=<unix>, Signature=<hex>.
+// "Body" é exatamente o corpo JSON enviado (a mesma string assinada e transmitida).
 export function signShopeeRequest(appId, secret, body, timestamp) {
   return createHash('sha256')
     .update(String(appId) + String(timestamp) + String(body) + String(secret), 'utf8')
@@ -199,7 +225,8 @@ export class ShopeeAffiliateClient {
     subIds = [],
     maxRetries = 2,
     retryBaseMs = 250,
-    now = () => Math.floor(Date.now() / 1000)
+    clockSkewSeconds = 0,
+    now
   } = {}) {
     this.appId = asText(appId);
     this.secret = asText(secret);
@@ -209,7 +236,12 @@ export class ShopeeAffiliateClient {
     this.subIds = Array.isArray(subIds) ? subIds.map(asText).filter(Boolean).slice(0, 5) : [];
     this.maxRetries = Number.isInteger(maxRetries) && maxRetries >= 0 ? maxRetries : 2;
     this.retryBaseMs = Number.isFinite(retryBaseMs) && retryBaseMs >= 0 ? retryBaseMs : 250;
-    this.now = now;
+    this.clockSkewSeconds = Number.isFinite(clockSkewSeconds) ? clockSkewSeconds : 0;
+    // Permite injetar um relógio (útil para testes) ou compensar divergência
+    // de relógio entre a máquina e o servidor Shopee (código 10020 "Invalid Timestamp").
+    this.now =
+      now ||
+      (() => Math.floor(Date.now() / 1000) + this.clockSkewSeconds);
   }
 
   isConfigured() {
@@ -242,6 +274,7 @@ export class ShopeeAffiliateClient {
       last = await this.#send(body);
       if (last.ok) return last;
       if (!RETRYABLE_REASONS.has(last.reason)) return last;
+      if (last.code != null && NON_RETRYABLE_CODES.has(Number(last.code))) return last;
     }
     return last;
   }
@@ -284,13 +317,22 @@ export class ShopeeAffiliateClient {
       }
       const gqlError = graphqlErrorInfo(payload);
       if (gqlError) {
-        const auth = AUTH_CODES.has(Number(gqlError.code));
+        const code = Number(gqlError.code);
+        const rateLimited = code === SHOPEE_ERROR_CODES.RATE_LIMIT;
+        const auth = AUTH_CODES.has(code);
+        const reason = rateLimited
+          ? 'rate-limited'
+          : auth
+            ? 'auth-error'
+            : code === SHOPEE_ERROR_CODES.SYSTEM_ERROR
+              ? 'system-error'
+              : 'graphql-error';
         return {
           ok: false,
           error: gqlError.message,
           code: gqlError.code,
-          reason: auth ? 'auth-error' : 'graphql-error',
-          status: response.status
+          reason,
+          status: rateLimited && response.status === 200 ? 429 : response.status
         };
       }
       if (!payload || typeof payload !== 'object' || payload.data == null) {
@@ -372,6 +414,7 @@ export function createShopeeAffiliateClient(config = {}, options = {}) {
     endpoint: config.shopeeApiUrl,
     subIds: config.shopeeSubIds,
     timeoutMs: config.shopeeTimeoutMs,
+    clockSkewSeconds: config.shopeeClockSkewSeconds,
     ...options
   });
 }

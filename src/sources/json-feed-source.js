@@ -211,7 +211,8 @@ export function createConfiguredSources(config, options = {}) {
         keywords: config.shopeeKeywords,
         limit: options.shopeeLimit,
         maxPages: options.shopeeMaxPages,
-        pageDelayMs: options.shopeePageDelayMs
+        pageDelayMs: options.shopeePageDelayMs,
+        clockSkewSeconds: config.shopeeClockSkewSeconds
       })
     );
   }

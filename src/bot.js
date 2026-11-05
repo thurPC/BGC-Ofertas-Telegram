@@ -28,15 +28,19 @@ export function createBot(token, options = {}) {
 }
 
 export async function startBotPolling(bot) {
-  if (!bot) return;
+  if (!bot) return false;
+  if (bot._bgcPollingStarted) return false;
+  if (bot.isPolling?.()) return false;
   if (typeof bot.deleteWebHook === 'function') {
     await bot.deleteWebHook().catch((error) => {
       logger.warn('Falha ao remover webhook antes do polling.', error.message);
     });
   }
   if (typeof bot.startPolling === 'function') {
+    bot._bgcPollingStarted = true;
     await bot.startPolling();
   }
+  return true;
 }
 
 export async function stopBot(bot) {

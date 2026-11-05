@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import {
+  SHOPEE_ERROR_CODES,
   ShopeeAffiliateClient,
   buildProductOfferQuery,
   buildShopeeAuthorization,
@@ -38,6 +39,108 @@ test('assina a requisição com SHA-256 no formato Shopee', () => {
   );
   const client = new ShopeeAffiliateClient({ appId: '123', secret: 'segredo' });
   assert.equal(client.authorization(body, timestamp), buildShopeeAuthorization('123', 'segredo', body, timestamp));
+});
+
+test('vetor de assinatura conhecido produz hash estável (hex lowercase 64)', () => {
+  const body = '{"query":"{ productOfferV2 }"}';
+  const timestamp = 1735689600;
+  const sig = signShopeeRequest('12345', 'segredo-teste', body, timestamp);
+  assert.match(sig, /^[0-9a-f]{64}$/);
+  assert.equal(
+    sig,
+    createHash('sha256').update(`12345${timestamp}${body}segredo-teste`, 'utf8').digest('hex')
+  );
+  const header = buildShopeeAuthorization('12345', 'segredo-teste', body, timestamp);
+  assert.match(header, /^SHA256 Credential=12345, Timestamp=1735689600, Signature=[0-9a-f]{64}$/);
+});
+
+test('a mesma string assinada é exatamente a enviada como corpo', async () => {
+  let sentBody = null;
+  let sentAuth = null;
+  const client = new ShopeeAffiliateClient({
+    appId: '123',
+    secret: 'segredo',
+    maxRetries: 0,
+    now: () => 1700000000,
+    fetchImpl: async (_url, options) => {
+      sentBody = options.body;
+      sentAuth = options.headers.Authorization;
+      return jsonResponse({ data: { productOfferV2: { nodes: [], pageInfo: { hasNextPage: false } } } });
+    }
+  });
+  const result = await client.searchProducts('fone', { limit: 1 });
+  assert.equal(result.ok, true);
+  assert.ok(typeof sentBody === 'string', 'o corpo enviado é a mesma string assinada');
+  assert.equal(sentAuth, buildShopeeAuthorization('123', 'segredo', sentBody, 1700000000));
+});
+
+test('clockSkewSeconds ajusta o timestamp usado na assinatura', () => {
+  const client = new ShopeeAffiliateClient({
+    appId: '123',
+    secret: 'segredo',
+    clockSkewSeconds: 90
+  });
+  const body = '{"query":"{ productOfferV2 }"}';
+  const expected = buildShopeeAuthorization('123', 'segredo', body, Math.floor(Date.now() / 1000) + 90);
+  assert.equal(client.authorization(body), expected);
+});
+
+test('classifica 10020 como erro de autenticação e 10000 como erro desconhecido (sem retry)', async () => {
+  let authCalls = 0;
+  const auth = new ShopeeAffiliateClient({
+    appId: '1',
+    secret: 'x',
+    maxRetries: 2,
+    retryBaseMs: 1,
+    fetchImpl: async () => {
+      authCalls += 1;
+      return jsonResponse({
+        errors: [{ message: 'Invalid Authorization Header', extensions: { code: 10020 } }]
+      });
+    }
+  });
+  const authResult = await auth.searchProducts('x');
+  assert.equal(authResult.reason, 'auth-error');
+  assert.equal(authResult.code, SHOPEE_ERROR_CODES.INVALID_AUTH_HEADER);
+  assert.equal(authCalls, 1, 'erro 10020 não deve ser repetido');
+
+  let unknownCalls = 0;
+  const unknown = new ShopeeAffiliateClient({
+    appId: '1',
+    secret: 'x',
+    maxRetries: 2,
+    retryBaseMs: 1,
+    fetchImpl: async () => {
+      unknownCalls += 1;
+      return jsonResponse({ errors: [{ message: 'System error', extensions: { code: 10000 } }] });
+    }
+  });
+  const unknownResult = await unknown.searchProducts('x');
+  assert.equal(unknownResult.reason, 'system-error');
+  assert.equal(unknownResult.code, SHOPEE_ERROR_CODES.SYSTEM_ERROR);
+  assert.equal(unknownCalls, 1, 'erro 10000 não deve ser repetido');
+});
+
+test('10030 (rate limit) é sinais de tráfego e faz retry, sem virar auth-error', async () => {
+  let calls = 0;
+  const client = new ShopeeAffiliateClient({
+    appId: '1',
+    secret: 'x',
+    maxRetries: 2,
+    retryBaseMs: 1,
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return jsonResponse({
+          errors: [{ message: 'Rate limit exceeded', extensions: { code: 10030 } }]
+        });
+      }
+      return jsonResponse({ data: { productOfferV2: { nodes: [], pageInfo: { hasNextPage: false } } } });
+    }
+  });
+  const result = await client.searchProducts('x');
+  assert.equal(result.ok, true);
+  assert.equal(calls, 2, 'rate limit deve ser repetido');
 });
 
 test('converte preços e taxas sem inventar unidade', () => {
