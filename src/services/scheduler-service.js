@@ -3,11 +3,13 @@ import path from 'node:path';
 import { logger } from '../logger.js';
 import { applyOfferFilters, isWithinAllowedHours } from '../sources/source-interface.js';
 import { findDuplicates } from './offer-service.js';
+import { identityMatchesPublished, offerIdentityKeys } from './offer-identity.js';
 import { isBookOffer } from './book-filter.js';
 import { validateOfferInput } from './validation-service.js';
 import { detectCategory, rankOffers } from './offer-scorer.js';
 import { evaluateReadiness } from './readiness-service.js';
 import { enabledCategories, mergeCategorySettings } from './category-service.js';
+import { hoursFromSchedule, mergeScheduleSettings } from './schedule-service.js';
 import { formatOfferHtml } from '../formatters/offer-message.js';
 
 function sleep(ms) {
@@ -17,11 +19,13 @@ function sleep(ms) {
 function duplicateKeys(offers) {
   const keys = new Set();
   for (const offer of offers) {
-    if (offer.externalId) keys.add(String(offer.externalId));
-    const url = String(offer.url ?? '').trim().toLowerCase();
-    if (url) keys.add(url);
+    for (const key of offerIdentityKeys(offer)) keys.add(key);
   }
   return keys;
+}
+
+function hasPublishedIdentity(candidate, publishedKeys) {
+  return identityMatchesPublished(candidate, publishedKeys);
 }
 
 export class SchedulerService {
@@ -53,6 +57,13 @@ export class SchedulerService {
         source.applySearchOptions({ categories, keywords });
       }
     }
+    return resolved;
+  }
+
+  applyScheduleSettings(settings) {
+    const resolved = mergeScheduleSettings(settings);
+    this.config.allowedHours = hoursFromSchedule(resolved);
+    this.config.schedule = resolved;
     return resolved;
   }
 
@@ -153,12 +164,13 @@ export class SchedulerService {
     await fs.unlink(this.lockFile).catch(() => undefined);
   }
 
-  #selectCandidates(collected, existing) {
+  #selectCandidates(collected, existing, publishedKeys) {
     const excludedBooks = (collected || []).filter((item) => isBookOffer(item, this.config)).length;
     const filtered = applyOfferFilters(collected, this.config);
     const unique = [];
     const seen = new Set();
     let duplicates = 0;
+    const knownKeys = publishedKeys instanceof Set ? new Set(publishedKeys) : duplicateKeys(existing);
     const enabled = Array.isArray(this.config.enabledCategories) ? this.config.enabledCategories : [];
     for (const item of filtered) {
       if (isBookOffer(item, this.config)) continue;
@@ -174,6 +186,9 @@ export class SchedulerService {
         url: item.url || validation.offer.url,
         imageUrl: item.imageUrl || validation.offer.imageUrl,
         externalId: item.externalId || null,
+        productLink: item.productLink || null,
+        itemId: item.itemId || null,
+        shopId: item.shopId || null,
         source: item.source || 'json-feed',
         commissionRate: item.commissionRate,
         sales: item.sales,
@@ -182,8 +197,8 @@ export class SchedulerService {
         description: item.description,
         priceDiscountRate: item.priceDiscountRate
       };
-      const key = candidate.externalId || String(candidate.url || '').toLowerCase();
-      if (key && seen.has(key)) {
+      const identity = offerIdentityKeys(candidate);
+      if (identity.some((key) => seen.has(key)) || hasPublishedIdentity(candidate, knownKeys)) {
         duplicates += 1;
         continue;
       }
@@ -191,12 +206,12 @@ export class SchedulerService {
         duplicates += 1;
         continue;
       }
-      if (key) seen.add(key);
+      for (const key of identity) seen.add(key);
       unique.push(candidate);
     }
 
     const ranked = rankOffers(unique, {
-      publishedKeys: duplicateKeys(existing),
+      publishedKeys: knownKeys,
       limit: this.config.maxOffersPerRun,
       minScore: this.config.minOfferScore,
       requireAffiliateLink: this.config.requireAffiliateLink === true,
@@ -227,10 +242,14 @@ export class SchedulerService {
     }
 
     const current = existing || await this.offerService.list();
+    const publishedKeys =
+      typeof this.offerService.seenKeys === 'function'
+        ? await this.offerService.seenKeys()
+        : duplicateKeys(current);
     const batch = collected
       ? { collected, sourceErrors: sourceErrors || [] }
       : await this.collectFromSources();
-    const chosen = selection || this.#selectCandidates(batch.collected, current);
+    const chosen = selection || this.#selectCandidates(batch.collected, current, publishedKeys);
     const errors = [...(batch.sourceErrors || [])];
     let imported = 0;
     let published = 0;
@@ -244,7 +263,14 @@ export class SchedulerService {
         continue;
       }
       const created = await this.offerService.create(
-        { ...item, source: item.source || 'json-feed', externalId: item.externalId },
+        {
+          ...item,
+          source: item.source || 'json-feed',
+          externalId: item.externalId,
+          productLink: item.productLink,
+          itemId: item.itemId,
+          shopId: item.shopId
+        },
         { actorId: 'scheduler' }
       );
       if (!created.ok) {
@@ -254,8 +280,7 @@ export class SchedulerService {
       current.push(created.offer);
       imported += 1;
       prepared.push(created.offer);
-      if (created.offer.externalId) seenKeys.push(created.offer.externalId);
-      if (created.offer.url) seenKeys.push(String(created.offer.url).toLowerCase());
+      seenKeys.push(...offerIdentityKeys(created.offer));
       if (publish) {
         const result = await this.publishingService.publish(created.offer, { actorId: 'scheduler' });
         if (result.ok) published += 1;
@@ -315,7 +340,11 @@ export class SchedulerService {
 
       const { collected, sourceErrors } = await this.collectFromSources();
       const existing = await this.offerService.list();
-      const selection = this.#selectCandidates(collected, existing);
+      const publishedKeys =
+        typeof this.offerService.seenKeys === 'function'
+          ? await this.offerService.seenKeys()
+          : duplicateKeys(existing);
+      const selection = this.#selectCandidates(collected, existing, publishedKeys);
       const messages = [];
       if (this.publishingService?.resolveTemplate) {
         const template = await this.publishingService.resolveTemplate();

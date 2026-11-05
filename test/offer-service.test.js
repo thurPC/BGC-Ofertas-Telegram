@@ -58,6 +58,68 @@ test('detecta duplicatas pelo link e pelo nome+loja sem excluir automaticamente'
   assert.equal(distinct.length, 0);
 });
 
+test('trata o mesmo item Shopee como duplicata mesmo com link, preço ou título novos', async () => {
+  const existing = [
+    {
+      id: '1',
+      name: 'Mouse Gamer',
+      store: 'Loja Gamer',
+      url: 'https://s.shopee.com.br/old',
+      externalId: 'shopee:20:10',
+      price: 99.9,
+      status: 'publicada'
+    }
+  ];
+  const dupes = findDuplicates(existing, {
+    name: 'Mouse Gamer RGB',
+    store: 'Outra Loja',
+    url: 'https://s.shopee.com.br/new',
+    externalId: 'shopee:20:10',
+    price: 79.9
+  });
+  assert.equal(dupes.length, 1);
+});
+
+test('oferta expirada com o mesmo externalId continua duplicata', async () => {
+  const existing = [
+    {
+      id: '1',
+      name: 'Mouse Gamer',
+      store: 'Shopee',
+      url: 'https://s.shopee.com.br/old',
+      externalId: 'shopee:1:99',
+      status: 'expirada'
+    }
+  ];
+  const dupes = findDuplicates(existing, {
+    name: 'Mouse Gamer novo',
+    store: 'Shopee',
+    url: 'https://s.shopee.com.br/new',
+    externalId: 'shopee:1:99'
+  });
+  assert.equal(dupes.length, 1);
+});
+
+test('create persiste chaves de identidade e seenKeys sobrevive à exclusão', async () => {
+  const { service } = await tempService();
+  const created = await service.create(
+    sample({
+      name: 'Mouse Gamer',
+      url: 'https://s.shopee.com.br/abc',
+      store: 'Shopee',
+      externalId: 'shopee:20:10'
+    })
+  );
+  assert.equal(created.ok, true);
+  const keys = await service.seenKeys();
+  assert.equal(keys.has('shopee:20:10'), true);
+  await service.remove(created.offer.id);
+  const afterDelete = await service.seenKeys();
+  assert.equal(afterDelete.has('shopee:20:10'), true);
+  const listed = await service.list();
+  assert.equal(listed.length, 0);
+});
+
 test('grava e lê JSON com atualização concorrente serializada', async () => {
   const { service } = await tempService();
   await Promise.all([

@@ -1,6 +1,7 @@
 import { calculateDiscount } from './validation-service.js';
 import { isShopeeAffiliateUrl } from './shopee-affiliate-client.js';
 import { isBookOffer } from './book-filter.js';
+import { identityMatchesPublished } from './offer-identity.js';
 
 export const DEFAULT_CATEGORIES = [
   {
@@ -85,7 +86,6 @@ export function isAffiliateTrackingUrl(url, store) {
 }
 
 export function scoreOffer(offer, context = {}) {
-  const publishedKeys = context.publishedKeys instanceof Set ? context.publishedKeys : new Set(context.publishedKeys || []);
   const reasons = [];
 
   if (!hasEssentialOfferData(offer)) {
@@ -96,8 +96,7 @@ export function scoreOffer(offer, context = {}) {
     return { score: 0, reject: 'book', discountPercent: null, category: detectCategory(offer), reasons };
   }
 
-  const key = offer.externalId || String(offer.url ?? '').trim().toLowerCase();
-  if (key && publishedKeys.has(key)) {
+  if (identityMatchesPublished(offer, context.publishedKeys || [])) {
     return { score: 0, reject: 'duplicate', discountPercent: null, category: detectCategory(offer), reasons };
   }
 

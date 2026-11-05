@@ -11,7 +11,8 @@ const DEFAULT_DB = {
     autoPublishEnabled: false,
     template: null,
     lastAutomationRun: null,
-    categories: null
+    categories: null,
+    schedule: null
   }
 };
 
@@ -100,7 +101,8 @@ export class JsonStorage {
         autoPublishEnabled: Boolean(data.settings?.autoPublishEnabled),
         template: data.settings?.template ?? null,
         lastAutomationRun: data.settings?.lastAutomationRun ?? null,
-        categories: data.settings?.categories ?? null
+        categories: data.settings?.categories ?? null,
+        schedule: data.settings?.schedule ?? null
       }
     };
   }

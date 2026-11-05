@@ -1,16 +1,18 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { logger } from './logger.js';
+import { isDuplicatePollingError } from './polling-error.js';
+
+export { isDuplicatePollingError };
 
 export function createBot(token, options = {}) {
   const bot = new TelegramBot(token, {
-    polling: options.polling !== false,
+    polling: false,
     filepath: false,
     ...options.telegram
   });
 
   bot.on('polling_error', (error) => {
-    const code = error?.code || error?.response?.statusCode;
-    if (code === 409) {
+    if (isDuplicatePollingError(error)) {
       logger.warn('Outra instância do bot já está em polling. Encerrando esta para evitar duplicidade.');
       process.emit('bgc:duplicate-polling');
       return;
@@ -23,6 +25,18 @@ export function createBot(token, options = {}) {
   });
 
   return bot;
+}
+
+export async function startBotPolling(bot) {
+  if (!bot) return;
+  if (typeof bot.deleteWebHook === 'function') {
+    await bot.deleteWebHook().catch((error) => {
+      logger.warn('Falha ao remover webhook antes do polling.', error.message);
+    });
+  }
+  if (typeof bot.startPolling === 'function') {
+    await bot.startPolling();
+  }
 }
 
 export async function stopBot(bot) {

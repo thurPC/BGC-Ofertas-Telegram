@@ -11,7 +11,8 @@ export const ADMIN_HELP_TEXT = [
   '/ofertas — lista ofertas cadastradas',
   '/status — estado operacional, sem dados sensíveis',
   '/modelo — edita o modelo de publicação (texto, emojis, ordem, preço, link do canal)',
-  '/categoria — liga ou desliga categorias da automação e palavras-chave extras',
+  '/categoria — adiciona, ativa, desativa ou remove categorias e itens extras',
+  '/horario — define a janela 24h em que o bot opera (sem minutos)',
   '/ajuda_admin — esta mensagem',
   '',
   'Fluxo de cadastro: nome, preço atual, preço anterior (opcional), PIX (opcional), cupom e condições, imagem, link, loja e validade.',
@@ -34,7 +35,8 @@ export function adminKeyboard() {
         { text: '🕘 Histórico', callback_data: 'admin:history' }
       ],
       [{ text: '🎨 Modelo de publicação', callback_data: 'modelo:voltar' }],
-      [{ text: '📂 Categorias', callback_data: 'categoria:voltar' }],
+      [{ text: 'Categorias', callback_data: 'categoria:voltar' }],
+      [{ text: 'Horario', callback_data: 'horario:voltar' }],
       [{ text: '🆘 Ajuda admin', callback_data: 'admin:help' }]
     ]
   };

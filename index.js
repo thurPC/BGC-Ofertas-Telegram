@@ -3,18 +3,20 @@ import path from 'node:path';
 import process from 'node:process';
 import dotenv from 'dotenv';
 import { assertRuntimeConfig, loadConfig, PROJECT_ROOT } from './src/config.js';
-import { createBot, stopBot } from './src/bot.js';
+import { createBot, startBotPolling, stopBot } from './src/bot.js';
 import { logger } from './src/logger.js';
 import { registerPublicCommands } from './src/commands/public.js';
 import { registerMessageHandler } from './src/handlers/message-handler.js';
 import { registerCallbackHandler } from './src/handlers/callback-handler.js';
 import { registerTemplateCallbacks, registerTemplateCommand } from './src/commands/template.js';
 import { registerCategoryCallbacks, registerCategoryCommand } from './src/commands/category.js';
+import { registerScheduleCallbacks, registerScheduleCommand } from './src/commands/schedule.js';
 import { OfferService } from './src/services/offer-service.js';
 import { PublishingService } from './src/services/publishing-service.js';
 import { SchedulerService } from './src/services/scheduler-service.js';
 import { TemplateService } from './src/services/template-service.js';
 import { CategoryService } from './src/services/category-service.js';
+import { ScheduleService } from './src/services/schedule-service.js';
 import { JsonStorage } from './src/storage/json-storage.js';
 import { createConfiguredSources } from './src/sources/json-feed-source.js';
 import { InstanceLock } from './src/process-lock.js';
@@ -90,7 +92,8 @@ async function main() {
   const offerService = new OfferService(storage);
   const templateService = new TemplateService(storage);
   const categoryService = new CategoryService(storage, config);
-  bot = createBot(config.token, { polling: true });
+  const scheduleService = new ScheduleService(storage, config);
+  bot = createBot(config.token);
   const publishingService = new PublishingService({ bot, config, offerService, templateService });
   const shopeeClient = createShopeeAffiliateClient(config);
   const sources = createConfiguredSources(config, { shopeeClient });
@@ -102,7 +105,7 @@ async function main() {
   });
 
   const linkOptions = { shopeeClient };
-  const ctx = { config, offerService, publishingService, scheduler, templateService, categoryService, linkOptions };
+  const ctx = { config, offerService, publishingService, scheduler, templateService, categoryService, scheduleService, linkOptions };
 
   registerPublicCommands(bot);
   registerMessageHandler(bot, ctx);
@@ -111,17 +114,25 @@ async function main() {
   registerTemplateCallbacks(bot, ctx);
   registerCategoryCommand(bot, ctx);
   registerCategoryCallbacks(bot, ctx);
+  registerScheduleCommand(bot, ctx);
+  registerScheduleCallbacks(bot, ctx);
 
   const categorySettings = await categoryService.get();
   scheduler.applyCategorySettings(categorySettings);
+  const scheduleSettings = await scheduleService.get();
+  scheduler.applyScheduleSettings(scheduleSettings);
 
   await bot.setMyCommands([
     { command: 'start', description: 'Apresentação do BGC Ofertas' },
     { command: 'ajuda', description: 'Lista de comandos' },
     { command: 'sobre', description: 'Sobre o BGC Ofertas' },
     { command: 'modelo', description: 'Modelo de publicação (equipe)' },
-    { command: 'categoria', description: 'Categorias da automação (equipe)' }
+    { command: 'categoria', description: 'Categorias da automação (equipe)' },
+    { command: 'horario', description: 'Horario de operacao 24h (equipe)' }
   ]);
+
+  registerShutdownHandlers();
+  await startBotPolling(bot);
 
   scheduler.start();
   logger.info('BGC Ofertas iniciado em long polling.');
@@ -135,8 +146,6 @@ async function main() {
   if (!readiness.ok) {
     logger.warn(`Verificação de prontidão: ${readiness.blockers.join(' ')}`);
   }
-
-  registerShutdownHandlers();
 }
 
 main().catch((error) => {

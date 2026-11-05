@@ -48,6 +48,16 @@ test('recusa produto incompleto, sem afiliado Shopee ou duplicado', () => {
     scoreOffer(offer({ externalId: 'shopee:1:2' }), { publishedKeys: new Set(['shopee:1:2']) }).reject,
     'duplicate'
   );
+  assert.equal(
+    scoreOffer(
+      offer({
+        externalId: 'shopee:20:10',
+        url: 'https://s.shopee.com.br/novo'
+      }),
+      { publishedKeys: new Set(['shopee:20:10', 'shopee:10']) }
+    ).reject,
+    'duplicate'
+  );
 });
 
 test('prioriza desconto comprovado, comissão e dados completos', () => {

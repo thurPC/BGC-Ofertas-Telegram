@@ -6,6 +6,7 @@ import {
   isShopeeAffiliateUrl
 } from '../services/shopee-affiliate-client.js';
 import { DEFAULT_CATEGORIES, detectCategory } from '../services/offer-scorer.js';
+import { offerIdentityKeys } from '../services/offer-identity.js';
 
 export const SHOPEE_CATEGORY_KEYWORDS = Object.fromEntries(
   DEFAULT_CATEGORIES.map((category) => [category.id, category.keywords])
@@ -77,7 +78,7 @@ export class ShopeeOfferSource extends OfferSource {
         category
       });
       if (!result.ok) {
-        return { ok: false, reason: result.reason, error: result.error, offers };
+        return { ok: false, reason: result.reason, error: result.error, code: result.code, offers };
       }
       for (const product of result.products) {
         const mapped = this.#toOffer(product, category);
@@ -112,6 +113,9 @@ export class ShopeeOfferSource extends OfferSource {
     return {
       ...normalized,
       externalId: product.externalId,
+      productLink: product.productLink || null,
+      itemId: product.itemId || null,
+      shopId: product.shopId || null,
       source: this.name,
       category: product.category || category || detectCategory(normalized),
       commissionRate: product.commissionRate,
@@ -139,8 +143,19 @@ export class ShopeeOfferSource extends OfferSource {
     for (const item of this.keywords) {
       const result = await this.queryKeyword(item.keyword, item.category);
       if (!result.ok) {
-        logger.warn('Falha ao consultar ofertas da Shopee.', result.reason || result.error);
-        errors.push({ keyword: item.keyword, reason: result.reason, error: result.error });
+        logger.warn(
+          'Falha ao consultar ofertas da Shopee.',
+          result.reason || 'erro',
+          result.error || '',
+          result.code != null ? `code=${result.code}` : ''
+        );
+        errors.push({
+          keyword: item.keyword,
+          reason: result.reason,
+          error: result.error,
+          code: result.code ?? null
+        });
+        if (result.reason === 'auth-error') break;
         continue;
       }
       offers.push(...result.offers);
@@ -150,9 +165,13 @@ export class ShopeeOfferSource extends OfferSource {
     }
 
     const unique = new Map();
+    const seen = new Set();
     for (const offer of offers) {
-      const key = offer.externalId || String(offer.url || '').toLowerCase();
+      const keys = offerIdentityKeys(offer);
+      if (keys.some((key) => seen.has(key))) continue;
+      const key = keys[0] || String(offer.url || '').toLowerCase();
       if (!key || unique.has(key)) continue;
+      for (const item of keys) seen.add(item);
       unique.set(key, offer);
     }
 

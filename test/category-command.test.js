@@ -89,13 +89,17 @@ test('searchKeywordsFromSettings usa categorias ativas e extras', () => {
 test('describeCategories e teclado mostram o estado atual', () => {
   const settings = mergeCategorySettings({ enabled: ['games', 'tecnologia'], extraKeywords: ['ssd'] });
   const html = describeCategories(settings);
-  assert.match(html, /Categorias da automação/);
+  assert.match(html, /Categorias da automacao/);
   assert.match(html, /Games/);
   assert.match(html, /ssd/);
   const keyboard = categoryKeyboard(settings);
   const labels = keyboard.inline_keyboard.flat().map((item) => item.text);
   assert.ok(labels.some((text) => /Games/.test(text)));
   assert.ok(labels.some((text) => /ssd/.test(text)));
+  assert.ok(labels.some((text) => /Adicionar item/.test(text)));
+  assert.ok(labels.some((text) => /Ativar/.test(text)));
+  assert.ok(labels.some((text) => /Desativar/.test(text)));
+  assert.ok(labels.some((text) => /Remover/.test(text)));
 });
 
 test('/categoria é restrito a admin e abre o painel', async () => {
@@ -113,11 +117,11 @@ test('/categoria é restrito a admin e abre o painel', async () => {
   assert.match(sent[0].text, /restrito/i);
   sent.length = 0;
   await route.handler({ chat: { id: 1 }, from: { id: 7 }, text: '/categoria' });
-  assert.match(sent[0].text, /Categorias da automação/);
+  assert.match(sent[0].text, /Categorias da automacao/);
   assert.ok(sent[0].extra.reply_markup.inline_keyboard.length > 0);
 });
 
-test('callback liga e desliga categoria e aplica no agendador', async () => {
+test('callback ativa e desativa categoria e aplica no agendador', async () => {
   const { service } = await tempService();
   const { bot, sent, handlers } = fakeBot();
   const config = loadConfig({
@@ -134,7 +138,7 @@ test('callback liga e desliga categoria e aplica no agendador', async () => {
   registerCategoryCallbacks(bot, { config, categoryService: service, scheduler });
   await handlers.callback[0]({
     id: '1',
-    data: 'categoria:toggle:casa',
+    data: 'categoria:off:casa',
     from: { id: 7 },
     message: { chat: { id: 11 } }
   });
@@ -235,13 +239,28 @@ test('agendador ignora categoria desligada e aplica palavras extras na fonte Sho
   assert.deepEqual(imported, ['Headset Gamer 7.1']);
 });
 
+test('item extra pode ser adicionado, desativado e removido', async () => {
+  const { service } = await tempService();
+  const added = await service.addKeyword('air fryer');
+  assert.equal(added.ok, true);
+  assert.equal(added.settings.extras[0].enabled, true);
+  const disabled = await service.deactivate('air fryer');
+  assert.equal(disabled.settings.extras[0].enabled, false);
+  assert.deepEqual(disabled.settings.extraKeywords, []);
+  const enabled = await service.activate('air fryer');
+  assert.equal(enabled.settings.extras[0].enabled, true);
+  const removed = await service.removeKeyword('air fryer');
+  assert.equal(removed.settings.extras.length, 0);
+});
+
 test('painel admin inclui o atalho de categorias', () => {
   const labels = adminKeyboard().inline_keyboard.flat().map((item) => item.text);
   assert.ok(labels.some((text) => /Categorias/.test(text)));
+  assert.ok(labels.some((text) => /Horario/.test(text)));
 });
 
 test('categoryPanel não quebra com settings vazias', () => {
   const panel = categoryPanel(null);
-  assert.match(panel.html, /Categorias da automação/);
+  assert.match(panel.html, /Categorias da automacao/);
   assert.ok(panel.keyboard.inline_keyboard.length > 0);
 });

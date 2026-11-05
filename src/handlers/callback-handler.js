@@ -41,7 +41,7 @@ export function registerCallbackHandler(bot, ctx) {
         return;
       }
 
-      if (data.startsWith('modelo:') || data.startsWith('categoria:')) return;
+      if (data.startsWith('modelo:') || data.startsWith('categoria:') || data.startsWith('horario:')) return;
 
       if (data === 'admin:home') {
         await safeAnswer(bot, query);

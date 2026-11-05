@@ -5,14 +5,15 @@ import { DEFAULT_CATEGORIES } from '../services/offer-scorer.js';
 import { describeCategories, mergeCategorySettings } from '../services/category-service.js';
 
 export const CATEGORY_HELP_TEXT = [
-  '📂 <b>Categorias da automação</b>',
+  '<b>Categorias da automacao</b>',
   '',
   'Use /categoria para abrir o painel e:',
-  '• ligar ou desligar Tecnologia, Informática, Games, Eletrônicos e Casa',
-  '• incluir palavras-chave extras na busca Shopee',
-  '• manter ou desativar a exclusão permanente de livros',
+  '- adicionar um item extra de busca',
+  '- ativar ou desativar categorias padrao e itens extras',
+  '- remover um item extra',
+  '- manter ou desativar a exclusao permanente de livros',
   '',
-  '/categoria restaurar — volta ao padrão',
+  '/categoria restaurar — volta ao padrao',
   '/categoria ajuda — esta mensagem',
   '',
   'Somente administradores autorizados podem alterar as categorias.'
@@ -39,37 +40,45 @@ function clearCategorySession(userId) {
   CATEGORY_SESSIONS.delete(String(userId));
 }
 
+function extraToken(index) {
+  return String(index);
+}
+
 export function categoryKeyboard(settings) {
   const resolved = mergeCategorySettings(settings);
-  const rows = DEFAULT_CATEGORIES.map((item) => {
+  const rows = [];
+  for (const item of DEFAULT_CATEGORIES) {
     const on = resolved.enabled.includes(item.id);
-    return [
-      {
-        text: `${on ? '✅' : '🚫'} ${item.label}`,
-        callback_data: `categoria:toggle:${item.id}`
-      }
-    ];
-  });
+    rows.push([{ text: `${on ? 'ON' : 'OFF'} ${item.label}`, callback_data: `categoria:noop:${item.id}` }]);
+    rows.push([
+      { text: 'Ativar', callback_data: `categoria:on:${item.id}` },
+      { text: 'Desativar', callback_data: `categoria:off:${item.id}` }
+    ]);
+  }
   rows.push([
     {
-      text: resolved.excludeBooks ? '📚 Livros: excluídos' : '📚 Livros: permitidos',
+      text: resolved.excludeBooks ? 'Livros: excluidos' : 'Livros: permitidos',
       callback_data: 'categoria:livros'
     }
   ]);
-  rows.push([{ text: '➕ Palavra extra', callback_data: 'categoria:palavra' }]);
-  if (resolved.extraKeywords.length) {
-    rows.push(
-      ...resolved.extraKeywords.slice(0, 8).map((keyword) => [
-        {
-          text: `🗑️ ${keyword.slice(0, 28)}`,
-          callback_data: `categoria:delkw:${encodeURIComponent(keyword).slice(0, 40)}`
-        }
-      ])
-    );
-  }
+  rows.push([{ text: 'Adicionar item', callback_data: 'categoria:add' }]);
+  resolved.extras.slice(0, 8).forEach((item, index) => {
+    const token = extraToken(index);
+    rows.push([
+      {
+        text: `${item.enabled ? 'ON' : 'OFF'} ${item.keyword.slice(0, 28)}`,
+        callback_data: `categoria:xnoop:${token}`
+      }
+    ]);
+    rows.push([
+      { text: 'Ativar', callback_data: `categoria:xon:${token}` },
+      { text: 'Desativar', callback_data: `categoria:xoff:${token}` },
+      { text: 'Remover', callback_data: `categoria:xdel:${token}` }
+    ]);
+  });
   rows.push([
-    { text: '♻️ Restaurar padrão', callback_data: 'categoria:restaurar' },
-    { text: '⬅️ Painel', callback_data: 'admin:home' }
+    { text: 'Restaurar padrao', callback_data: 'categoria:restaurar' },
+    { text: 'Painel', callback_data: 'admin:home' }
   ]);
   return { inline_keyboard: rows };
 }
@@ -87,10 +96,16 @@ async function applyToRuntime(ctx, settings) {
   }
 }
 
+function extraFromToken(settings, token) {
+  const index = Number.parseInt(String(token), 10);
+  if (!Number.isInteger(index) || index < 0) return null;
+  return settings.extras[index] || null;
+}
+
 export function registerCategoryCommand(bot, ctx) {
   bot.onText(/^\/categoria(?:@\w+)?(?:\s+(\S+))?\s*$/, async (msg, match) => {
     if (!isAdmin(ctx.config, msg.from?.id)) {
-      await bot.sendMessage(msg.chat.id, 'Este comando é restrito à equipe BGC Ofertas.');
+      await bot.sendMessage(msg.chat.id, 'Este comando e restrito a equipe BGC Ofertas.');
       return;
     }
     const arg = String(match?.[1] || '').toLowerCase();
@@ -103,7 +118,7 @@ export function registerCategoryCommand(bot, ctx) {
       await applyToRuntime(ctx, settings);
       clearCategorySession(msg.from.id);
       const panel = categoryPanel(settings);
-      await bot.sendMessage(msg.chat.id, `♻️ Categorias restauradas.\n\n${panel.html}`, {
+      await bot.sendMessage(msg.chat.id, `Categorias restauradas.\n\n${panel.html}`, {
         parse_mode: 'HTML',
         reply_markup: panel.keyboard
       });
@@ -138,13 +153,13 @@ export function registerCategoryCommand(bot, ctx) {
       }
       await applyToRuntime(ctx, result.settings);
       const panel = categoryPanel(result.settings);
-      await bot.sendMessage(msg.chat.id, `✅ Palavra-chave adicionada.\n\n${panel.html}`, {
+      await bot.sendMessage(msg.chat.id, `Item extra adicionado.\n\n${panel.html}`, {
         parse_mode: 'HTML',
         reply_markup: panel.keyboard
       });
     } catch (error) {
       logger.warn('Falha ao editar categorias.', error.message);
-      await bot.sendMessage(msg.chat.id, 'Não foi possível atualizar as categorias.').catch(() => undefined);
+      await bot.sendMessage(msg.chat.id, 'Nao foi possivel atualizar as categorias.').catch(() => undefined);
     }
   });
 }
@@ -175,7 +190,7 @@ export function registerCategoryCallbacks(bot, ctx) {
         await applyToRuntime(ctx, settings);
         clearCategorySession(userId);
         const panel = categoryPanel(settings);
-        await bot.sendMessage(chatId, `♻️ Categorias restauradas.\n\n${panel.html}`, {
+        await bot.sendMessage(chatId, `Categorias restauradas.\n\n${panel.html}`, {
           parse_mode: 'HTML',
           reply_markup: panel.keyboard
         });
@@ -191,13 +206,41 @@ export function registerCategoryCallbacks(bot, ctx) {
         return;
       }
 
-      if (data === 'categoria:palavra') {
+      if (data === 'categoria:add' || data === 'categoria:palavra') {
         setCategorySession(userId, { kind: 'palavra' });
         await bot.sendMessage(
           chatId,
-          '➕ Envie a palavra-chave extra para a busca Shopee.\nExemplo: <code>air fryer</code>',
+          'Envie a palavra-chave extra para a busca Shopee.\nExemplo: <code>air fryer</code>',
           { parse_mode: 'HTML' }
         );
+        return;
+      }
+
+      if (data.startsWith('categoria:noop:') || data.startsWith('categoria:xnoop:')) return;
+
+      if (data.startsWith('categoria:on:')) {
+        const id = data.slice('categoria:on:'.length);
+        const result = await ctx.categoryService.activate(id, { actorId: userId });
+        if (!result.ok) {
+          await bot.sendMessage(chatId, result.error);
+          return;
+        }
+        await applyToRuntime(ctx, result.settings);
+        const panel = categoryPanel(result.settings);
+        await bot.sendMessage(chatId, panel.html, { parse_mode: 'HTML', reply_markup: panel.keyboard });
+        return;
+      }
+
+      if (data.startsWith('categoria:off:')) {
+        const id = data.slice('categoria:off:'.length);
+        const result = await ctx.categoryService.deactivate(id, { actorId: userId });
+        if (!result.ok) {
+          await bot.sendMessage(chatId, result.error);
+          return;
+        }
+        await applyToRuntime(ctx, result.settings);
+        const panel = categoryPanel(result.settings);
+        await bot.sendMessage(chatId, panel.html, { parse_mode: 'HTML', reply_markup: panel.keyboard });
         return;
       }
 
@@ -214,6 +257,29 @@ export function registerCategoryCallbacks(bot, ctx) {
         return;
       }
 
+      const extraAction = /^(categoria:x(?:on|off|del)):(\d+)$/.exec(data);
+      if (extraAction) {
+        const current = await ctx.categoryService.get();
+        const extra = extraFromToken(current, extraAction[2]);
+        if (!extra) {
+          await bot.sendMessage(chatId, 'Item extra nao encontrado.');
+          return;
+        }
+        let result;
+        if (extraAction[1] === 'categoria:xon') result = await ctx.categoryService.activate(extra.keyword, { actorId: userId });
+        else if (extraAction[1] === 'categoria:xoff') result = await ctx.categoryService.deactivate(extra.keyword, { actorId: userId });
+        else result = await ctx.categoryService.removeKeyword(extra.keyword, { actorId: userId });
+        if (!result.ok) {
+          await bot.sendMessage(chatId, result.error);
+          return;
+        }
+        await applyToRuntime(ctx, result.settings);
+        const panel = categoryPanel(result.settings);
+        const prefix = extraAction[1] === 'categoria:xdel' ? `Removido: ${escapeHtml(extra.keyword)}\n\n` : '';
+        await bot.sendMessage(chatId, `${prefix}${panel.html}`, { parse_mode: 'HTML', reply_markup: panel.keyboard });
+        return;
+      }
+
       if (data.startsWith('categoria:delkw:')) {
         const encoded = data.slice('categoria:delkw:'.length);
         let keyword = encoded;
@@ -225,7 +291,7 @@ export function registerCategoryCallbacks(bot, ctx) {
         const result = await ctx.categoryService.removeKeyword(keyword, { actorId: userId });
         await applyToRuntime(ctx, result.settings);
         const panel = categoryPanel(result.settings);
-        await bot.sendMessage(chatId, `🗑️ Removido: ${escapeHtml(keyword)}\n\n${panel.html}`, {
+        await bot.sendMessage(chatId, `Removido: ${escapeHtml(keyword)}\n\n${panel.html}`, {
           parse_mode: 'HTML',
           reply_markup: panel.keyboard
         });

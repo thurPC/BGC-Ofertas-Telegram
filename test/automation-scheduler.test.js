@@ -133,6 +133,82 @@ test('produção publica só as melhores e respeita o limite por execução', as
   assert.match(published[0], /Oferta forte/);
 });
 
+test('não republica o mesmo produto Shopee com outro link curto, preço ou título', async () => {
+  const { service } = await tempService();
+  const published = [];
+  const offers = [
+    sampleOffer(),
+    sampleOffer({
+      name: 'Headset Gamer 7.1 RGB',
+      price: 119.9,
+      url: 'https://s.shopee.com.br/headset-novo',
+      externalId: 'shopee:1:99'
+    })
+  ];
+  let round = 0;
+  const rotating = {
+    name: 'shopee-open-api',
+    isConfigured() {
+      return true;
+    },
+    async fetch() {
+      const offer = offers[Math.min(round, offers.length - 1)];
+      round += 1;
+      return { ok: true, offers: [offer], errors: [] };
+    }
+  };
+  const scheduler = new SchedulerService({
+    config: config({ autoPublish: true, maxOffersPerRun: 5, publishGapSeconds: 0 }),
+    sources: [rotating],
+    offerService: service,
+    publishingService: {
+      async publish(offer) {
+        published.push(offer.url);
+        return { ok: true };
+      }
+    },
+    sleepFn: async () => undefined
+  });
+  const first = await scheduler.run();
+  const second = await scheduler.run();
+  assert.equal(first.published, 1);
+  assert.equal(second.published, 0);
+  assert.equal(second.duplicates, 1);
+  assert.deepEqual(published, ['https://s.shopee.com.br/headset']);
+});
+
+test('histórico seenOffers impede republicar após remover a oferta', async () => {
+  const { service } = await tempService();
+  const published = [];
+  const scheduler = new SchedulerService({
+    config: config({ autoPublish: true, maxOffersPerRun: 5, publishGapSeconds: 0 }),
+    sources: [
+      source([
+        sampleOffer({
+          url: 'https://s.shopee.com.br/um',
+          externalId: 'shopee:8:88'
+        })
+      ])
+    ],
+    offerService: service,
+    publishingService: {
+      async publish() {
+        published.push('ok');
+        return { ok: true };
+      }
+    },
+    sleepFn: async () => undefined
+  });
+  const first = await scheduler.run();
+  assert.equal(first.published, 1);
+  const listed = await service.list();
+  await service.remove(listed[0].id);
+  const second = await scheduler.run();
+  assert.equal(second.published, 0);
+  assert.equal(second.duplicates, 1);
+  assert.equal(published.length, 1);
+});
+
 test('bloqueia duplicatas entre execuções e persiste o histórico', async () => {
   const { service, storage } = await tempService();
   const published = [];

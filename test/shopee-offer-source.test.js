@@ -82,6 +82,29 @@ test('descarta itens sem offerLink de afiliado, preço ou nome', async () => {
   assert.equal(result.offers.length, 0);
 });
 
+test('propaga mensagem GraphQL e interrompe após erro de autenticação', async () => {
+  let calls = 0;
+  const source = new ShopeeOfferSource({
+    appId: '1',
+    secret: 'x',
+    keywords: ['games', 'tecnologia'],
+    pageDelayMs: 0,
+    keywordDelayMs: 0,
+    fetchImpl: async () => {
+      calls += 1;
+      return response({
+        errors: [{ message: 'error [10020]: Invalid Authorization Header', extensions: { code: 10020 } }]
+      });
+    }
+  });
+  const result = await source.fetch();
+  assert.equal(result.ok, true);
+  assert.equal(result.offers.length, 0);
+  assert.equal(result.errors[0].reason, 'auth-error');
+  assert.match(result.errors[0].error, /Invalid Authorization Header/);
+  assert.equal(calls, 1);
+});
+
 test('não faz chamada se as credenciais não existem', async () => {
   const source = new ShopeeOfferSource({
     keywords: ['casa'],
@@ -130,6 +153,44 @@ test('pagina enquanto hasNextPage for verdadeiro até o limite', async () => {
   const result = await source.fetch();
   assert.deepEqual(pages, ['1', '2']);
   assert.equal(result.offers.length, 2);
+});
+
+test('deduplica o mesmo item Shopee com links curtos diferentes', async () => {
+  let calls = 0;
+  const source = new ShopeeOfferSource({
+    appId: '1',
+    secret: 'x',
+    keywords: ['games', 'tecnologia'],
+    pageDelayMs: 0,
+    keywordDelayMs: 0,
+    fetchImpl: async () => {
+      calls += 1;
+      return response({
+        data: {
+          productOfferV2: {
+            nodes: [
+              {
+                itemId: 10,
+                shopId: 20,
+                productName: calls === 1 ? 'Mouse gamer' : 'Mouse Gamer RGB',
+                offerLink: `https://s.shopee.com.br/${calls}`,
+                productLink: 'https://shopee.com.br/item-i.20.10',
+                priceMin: calls === 1 ? '99.90' : '89.90',
+                shopName: 'Loja teste'
+              }
+            ],
+            pageInfo: { hasNextPage: false }
+          }
+        }
+      });
+    }
+  });
+  const result = await source.fetch();
+  assert.equal(calls, 2);
+  assert.equal(result.offers.length, 1);
+  assert.equal(result.offers[0].externalId, 'shopee:20:10');
+  assert.equal(result.offers[0].url, 'https://s.shopee.com.br/1');
+  assert.equal(result.offers[0].productLink, 'https://shopee.com.br/item-i.20.10');
 });
 
 test('createConfiguredSources inclui Shopee somente com credenciais', () => {

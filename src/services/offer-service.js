@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { calculateDiscount, validateOfferInput } from './validation-service.js';
+import { offerIdentityKeys, offersShareIdentity } from './offer-identity.js';
 
 export const OFFER_STATUS = {
   DRAFT: 'rascunho',
@@ -38,18 +39,11 @@ export function fingerprint(offer) {
 
 export function findDuplicates(offers, candidate, { excludeId } = {}) {
   const target = fingerprint(candidate);
-  const name = normalizeKey(candidate.name);
-  const url = String(candidate.url ?? '').trim().toLowerCase();
-  const externalId = String(candidate.externalId ?? '').trim();
   return offers.filter((offer) => {
     if (excludeId && offer.id === excludeId) return false;
-    if ([OFFER_STATUS.CANCELLED, OFFER_STATUS.EXPIRED].includes(offer.status)) return false;
-    if (externalId && String(offer.externalId ?? '').trim() === externalId) return true;
+    if (offer.status === OFFER_STATUS.CANCELLED) return false;
+    if (offersShareIdentity(offer, candidate)) return true;
     if (fingerprint(offer) === target) return true;
-    if (url && String(offer.url ?? '').trim().toLowerCase() === url) return true;
-    if (name && normalizeKey(offer.name) === name && normalizeKey(offer.store) === normalizeKey(candidate.store)) {
-      return true;
-    }
     return false;
   });
 }
@@ -94,13 +88,25 @@ export class OfferService {
     }
 
     const db = await this.storage.read();
-    const duplicates = findDuplicates(db.offers, validation.offer);
-    const offer = {
-      id: createOfferId(),
+    const candidate = {
       ...validation.offer,
       url: input.url || validation.offer.url,
       imageUrl: input.imageUrl || validation.offer.imageUrl || null,
       externalId: input.externalId ?? null,
+      productLink: input.productLink ?? null,
+      itemId: input.itemId ?? null,
+      shopId: input.shopId ?? null
+    };
+    const duplicates = findDuplicates(db.offers, candidate);
+    const offer = {
+      id: createOfferId(),
+      ...validation.offer,
+      url: candidate.url,
+      imageUrl: candidate.imageUrl,
+      externalId: candidate.externalId,
+      productLink: candidate.productLink,
+      itemId: candidate.itemId,
+      shopId: candidate.shopId,
       status: OFFER_STATUS.READY,
       createdAt: nowIso(),
       updatedAt: nowIso(),
@@ -112,6 +118,9 @@ export class OfferService {
 
     await this.storage.update((current) => {
       current.offers.push(offer);
+      const seen = new Set(Array.isArray(current.seenOffers) ? current.seenOffers : []);
+      for (const key of offerIdentityKeys(offer)) seen.add(key);
+      current.seenOffers = [...seen].slice(-5000);
       current.history.push({
         at: nowIso(),
         action: 'create',
@@ -245,12 +254,14 @@ export class OfferService {
     const db = await this.storage.read();
     const keys = new Set();
     for (const key of db.seenOffers || []) {
+      for (const item of offerIdentityKeys({ externalId: key, url: key, productLink: key })) {
+        keys.add(item);
+      }
       if (key) keys.add(String(key));
     }
     for (const offer of db.offers || []) {
-      if (offer.externalId) keys.add(String(offer.externalId));
-      const url = String(offer.url ?? '').trim().toLowerCase();
-      if (url) keys.add(url);
+      if (offer.status === OFFER_STATUS.CANCELLED) continue;
+      for (const key of offerIdentityKeys(offer)) keys.add(key);
     }
     return keys;
   }

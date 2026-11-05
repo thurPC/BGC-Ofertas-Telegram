@@ -6,6 +6,7 @@ export const CATEGORY_IDS = DEFAULT_CATEGORIES.map((item) => item.id);
 export function defaultCategorySettings() {
   return {
     enabled: [...CATEGORY_IDS],
+    extras: [],
     extraKeywords: [],
     excludeBooks: true
   };
@@ -25,6 +26,31 @@ function uniqueTexts(values) {
   return result;
 }
 
+function extraKeywordOf(value) {
+  if (typeof value === 'string') return String(value).trim();
+  if (value && typeof value === 'object') return String(value.keyword ?? value.text ?? '').trim();
+  return '';
+}
+
+function extraEnabledOf(value) {
+  if (value && typeof value === 'object') return value.enabled !== false;
+  return true;
+}
+
+export function normalizeExtras(values) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values || []) {
+    const keyword = extraKeywordOf(value);
+    if (keyword.length < 2) continue;
+    const key = keyword.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ keyword, enabled: extraEnabledOf(value) });
+  }
+  return result.slice(0, 40);
+}
+
 export function mergeCategorySettings(input = {}, fallback = defaultCategorySettings()) {
   const base = defaultCategorySettings();
   const source = input && typeof input === 'object' ? input : {};
@@ -32,9 +58,11 @@ export function mergeCategorySettings(input = {}, fallback = defaultCategorySett
   const enabled = uniqueTexts(enabledRaw)
     .map((item) => String(item).trim().toLowerCase())
     .filter((id) => CATEGORY_IDS.includes(id));
+  const extras = normalizeExtras(source.extras ?? source.extraKeywords ?? fallback.extras ?? fallback.extraKeywords);
   return {
     enabled: enabled.length ? enabled : [...base.enabled],
-    extraKeywords: uniqueTexts(source.extraKeywords ?? fallback.extraKeywords).slice(0, 40),
+    extras,
+    extraKeywords: extras.filter((item) => item.enabled).map((item) => item.keyword),
     excludeBooks: source.excludeBooks !== false
   };
 }
@@ -56,20 +84,25 @@ export function searchKeywordsFromSettings(settings, envKeywords = []) {
 
 export function describeCategories(settings) {
   const resolved = mergeCategorySettings(settings);
-  const lines = ['📂 <b>Categorias da automação</b>', ''];
+  const lines = ['<b>Categorias da automacao</b>', ''];
+  lines.push('<b>Categorias padrao</b>');
   for (const item of DEFAULT_CATEGORIES) {
     const on = resolved.enabled.includes(item.id);
-    lines.push(`${on ? '✅' : '🚫'} <b>${escapeHtml(item.label)}</b> <code>${escapeHtml(item.id)}</code>`);
+    lines.push(`${on ? 'ON' : 'OFF'} <b>${escapeHtml(item.label)}</b> <code>${escapeHtml(item.id)}</code>`);
   }
   lines.push('');
-  lines.push(`📚 Excluir livros: <b>${resolved.excludeBooks ? 'sim' : 'não'}</b>`);
+  lines.push(`Excluir livros: <b>${resolved.excludeBooks ? 'sim' : 'nao'}</b>`);
   lines.push('');
-  if (resolved.extraKeywords.length) {
-    lines.push('<b>Palavras extras</b>');
-    lines.push(...resolved.extraKeywords.map((keyword) => `• ${escapeHtml(keyword)}`));
+  if (resolved.extras.length) {
+    lines.push('<b>Itens extras</b>');
+    lines.push(
+      ...resolved.extras.map((item) => `${item.enabled ? 'ON' : 'OFF'} ${escapeHtml(item.keyword)}`)
+    );
   } else {
-    lines.push('<b>Palavras extras:</b> nenhuma');
+    lines.push('<b>Itens extras:</b> nenhum');
   }
+  lines.push('');
+  lines.push('Use os botoes para adicionar, ativar, desativar ou remover.');
   return lines.join('\n');
 }
 
@@ -83,6 +116,7 @@ export class CategoryService {
   defaults() {
     return mergeCategorySettings({
       enabled: [...CATEGORY_IDS],
+      extras: [],
       extraKeywords: [],
       excludeBooks: this.envExcludeBooks
     });
@@ -112,14 +146,60 @@ export class CategoryService {
   async toggle(id, { actorId } = {}) {
     const current = await this.get();
     const key = String(id ?? '').trim().toLowerCase();
-    if (!CATEGORY_IDS.includes(key)) return { ok: false, error: 'Categoria desconhecida.' };
-    const enabled = current.enabled.includes(key)
-      ? current.enabled.filter((item) => item !== key)
-      : [...current.enabled, key];
-    if (!enabled.length) {
+    if (CATEGORY_IDS.includes(key)) {
+      return current.enabled.includes(key)
+        ? this.deactivate(key, { actorId })
+        : this.activate(key, { actorId });
+    }
+    const extra = current.extras.find((item) => item.keyword.toLowerCase() === key);
+    if (extra) {
+      return extra.enabled ? this.deactivate(key, { actorId }) : this.activate(key, { actorId });
+    }
+    return { ok: false, error: 'Categoria desconhecida.' };
+  }
+
+  async activate(id, { actorId } = {}) {
+    const current = await this.get();
+    const key = String(id ?? '').trim().toLowerCase();
+    if (CATEGORY_IDS.includes(key)) {
+      if (current.enabled.includes(key)) return { ok: true, settings: current };
+      const settings = await this.save(
+        { ...current, enabled: [...current.enabled, key] },
+        { actorId, action: 'category-activate' }
+      );
+      return { ok: true, settings };
+    }
+    const extras = current.extras.map((item) =>
+      item.keyword.toLowerCase() === key ? { ...item, enabled: true } : item
+    );
+    if (!extras.some((item) => item.keyword.toLowerCase() === key)) {
+      return { ok: false, error: 'Item extra nao encontrado.' };
+    }
+    const settings = await this.save({ ...current, extras }, { actorId, action: 'category-activate' });
+    return { ok: true, settings };
+  }
+
+  async deactivate(id, { actorId } = {}) {
+    const current = await this.get();
+    const key = String(id ?? '').trim().toLowerCase();
+    if (CATEGORY_IDS.includes(key)) {
+      const enabled = current.enabled.filter((item) => item !== key);
+      if (!enabled.length && !current.extras.some((item) => item.enabled)) {
+        return { ok: false, error: 'Mantenha ao menos uma categoria ativa.' };
+      }
+      const settings = await this.save({ ...current, enabled }, { actorId, action: 'category-deactivate' });
+      return { ok: true, settings };
+    }
+    const extras = current.extras.map((item) =>
+      item.keyword.toLowerCase() === key ? { ...item, enabled: false } : item
+    );
+    if (!extras.some((item) => item.keyword.toLowerCase() === key)) {
+      return { ok: false, error: 'Item extra nao encontrado.' };
+    }
+    if (!current.enabled.length && extras.every((item) => !item.enabled)) {
       return { ok: false, error: 'Mantenha ao menos uma categoria ativa.' };
     }
-    const settings = await this.save({ ...current, enabled }, { actorId, action: 'category-toggle' });
+    const settings = await this.save({ ...current, extras }, { actorId, action: 'category-deactivate' });
     return { ok: true, settings };
   }
 
@@ -128,18 +208,25 @@ export class CategoryService {
     if (text.length < 2) return { ok: false, error: 'Informe uma palavra-chave com pelo menos 2 caracteres.' };
     if (text.length > 60) return { ok: false, error: 'Palavra-chave longa demais.' };
     const current = await this.get();
-    const settings = await this.save(
-      { ...current, extraKeywords: [...current.extraKeywords, text] },
-      { actorId, action: 'category-keyword-add' }
-    );
+    const key = text.toLowerCase();
+    const known = DEFAULT_CATEGORIES.find((item) => item.id === key || item.label.toLowerCase() === key);
+    if (known) return this.activate(known.id, { actorId });
+    const existing = current.extras.find((item) => item.keyword.toLowerCase() === key);
+    const extras = existing
+      ? current.extras.map((item) => (item.keyword.toLowerCase() === key ? { keyword: item.keyword, enabled: true } : item))
+      : [...current.extras, { keyword: text, enabled: true }];
+    const settings = await this.save({ ...current, extras }, { actorId, action: 'category-keyword-add' });
     return { ok: true, settings };
   }
 
   async removeKeyword(keyword, { actorId } = {}) {
     const current = await this.get();
     const key = String(keyword ?? '').trim().toLowerCase();
-    const extraKeywords = current.extraKeywords.filter((item) => item.toLowerCase() !== key);
-    const settings = await this.save({ ...current, extraKeywords }, { actorId, action: 'category-keyword-remove' });
+    if (CATEGORY_IDS.includes(key)) {
+      return { ok: false, error: 'Categorias padrao nao podem ser removidas. Desative-a se nao quiser usa-la.' };
+    }
+    const extras = current.extras.filter((item) => item.keyword.toLowerCase() !== key);
+    const settings = await this.save({ ...current, extras }, { actorId, action: 'category-keyword-remove' });
     return { ok: true, settings };
   }
 
