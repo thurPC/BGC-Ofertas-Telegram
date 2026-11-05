@@ -144,6 +144,10 @@ export class SchedulerService {
         { actorId: 'scheduler' }
       );
       if (!created.ok) {
+        if (created.duplicate) {
+          duplicates += 1;
+          continue;
+        }
         errors.push({ name: item.name, errors: created.errors || [created.error] });
         continue;
       }

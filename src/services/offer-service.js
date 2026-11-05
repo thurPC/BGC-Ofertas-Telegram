@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { extractAsin } from './link-extractor.js';
 import { analyzeExclusion, exclusionMessage, isExcludedProduct } from './exclusion-filter.js';
 import { calculateDiscount, validateOfferInput } from './validation-service.js';
 
@@ -11,6 +12,18 @@ export const OFFER_STATUS = {
 };
 
 const EDITABLE = new Set([OFFER_STATUS.DRAFT, OFFER_STATUS.READY]);
+const INACTIVE = new Set([OFFER_STATUS.CANCELLED, OFFER_STATUS.EXPIRED]);
+
+const TRACKING_PARAMS = new Set([
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'utm_id',
+  'fbclid', 'gclid', 'gclsrc', 'dclid', 'msclkid', 'ttclid', 'yclid',
+  'mc_cid', 'mc_eid', 'igshid', 'si', 'spm', 'scm',
+  'ref', 'ref_', 'tag', 'linkcode', 'camp', 'creative', 'creativeasin',
+  'ascsubtag', 'asc_campaign', 'asc_refurl', 'asc_source',
+  'matt_word', 'matt_tool', 'matt_source',
+  'afiliado', 'affiliate', 'aff_id', 'affid', 'affiliate_id',
+  'partner', 'partner_id', 'smtt', 'xptdk'
+]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -30,34 +43,154 @@ function normalizeKey(value) {
     .trim();
 }
 
+function isTrackingParam(key) {
+  const name = String(key ?? '').toLowerCase();
+  if (!name) return false;
+  if (TRACKING_PARAMS.has(name)) return true;
+  return name.startsWith('utm_') || name.startsWith('mt_');
+}
+
+function normalizeStore(store) {
+  const key = normalizeKey(store);
+  if (!key) return '';
+  if (key === 'amzn' || key.startsWith('amazon') || key.startsWith('amzn ')) return 'amazon';
+  if (key.includes('mercado livr') || key.includes('mercadolivre') || key.includes('mercadolibre')) {
+    return 'mercado livre';
+  }
+  if (key.startsWith('shopee')) return 'shopee';
+  return key;
+}
+
+function mercadoLivreId(url) {
+  const text = String(url ?? '');
+  const product = text.match(/\/p\/(MLB\d+)/i);
+  if (product) return product[1].toUpperCase();
+  const item = text.match(/(?:\/|-)(MLB-?\d{8,})/i);
+  return item ? item[1].replace(/-/g, '').toUpperCase() : null;
+}
+
+function shopeeProductId(url) {
+  const match = String(url ?? '').match(/\/product\/(\d+)\/(\d+)/i);
+  return match ? `${match[1]}/${match[2]}` : null;
+}
+
+function isAmazonHost(host) {
+  const value = String(host ?? '').toLowerCase();
+  return value.includes('amazon') || value.includes('amzn') || value === 'a.co';
+}
+
+export function canonicalizeUrl(raw) {
+  const text = String(raw ?? '').trim();
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    if (!['http:', 'https:'].includes(url.protocol)) return text.toLowerCase();
+    url.hash = '';
+    url.hostname = url.hostname.replace(/^www\./i, '').toLowerCase();
+    url.protocol = 'https:';
+    const asin = extractAsin(url.toString());
+    if (asin && isAmazonHost(url.hostname)) {
+      return `https://${url.hostname}/dp/${asin}`;
+    }
+    const mlb = mercadoLivreId(url.toString());
+    if (mlb && url.hostname.includes('mercado')) {
+      return `https://${url.hostname}/p/${mlb}`;
+    }
+    const shopee = shopeeProductId(url.pathname);
+    if (shopee && url.hostname.includes('shopee')) {
+      return `https://${url.hostname}/product/${shopee}`;
+    }
+    const kept = [...url.searchParams.entries()]
+      .filter(([key]) => !isTrackingParam(key))
+      .map(([key, value]) => [key.toLowerCase(), value])
+      .sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
+    url.search = '';
+    for (const [key, value] of kept) url.searchParams.append(key, value);
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+    return `${url.protocol}//${url.hostname}${path}${url.search}`;
+  } catch {
+    return text.toLowerCase();
+  }
+}
+
+function candidateUrls(offer) {
+  return [offer?.url, offer?.resolvedProductUrl, offer?.originalAffiliateUrl]
+    .map((value) => canonicalizeUrl(value))
+    .filter(Boolean);
+}
+
+function urlLooksAmazon(raw) {
+  try {
+    return isAmazonHost(new URL(String(raw)).hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function identityKeys(offer) {
+  const keys = new Set();
+  const externalId = String(offer?.externalId ?? '').trim();
+  if (externalId) keys.add(`ext:${externalId}`);
+  const urls = [offer?.url, offer?.resolvedProductUrl, offer?.originalAffiliateUrl];
+  const asin = String(offer?.asin ?? '').trim().toUpperCase() || null;
+  const amazonUrls = urls.filter((value) => value && urlLooksAmazon(value));
+  const foundAsin = asin || amazonUrls.map((value) => extractAsin(value)).find(Boolean);
+  if (foundAsin) keys.add(`asin:${String(foundAsin).toUpperCase()}`);
+  for (const raw of urls) {
+    const mlb = mercadoLivreId(raw);
+    if (mlb) keys.add(`mlb:${mlb}`);
+    const shopee = shopeeProductId(raw);
+    if (shopee) keys.add(`shopee:${shopee}`);
+  }
+  for (const url of candidateUrls(offer)) keys.add(`url:${url}`);
+  const name = normalizeKey(offer?.name);
+  const store = normalizeStore(offer?.store);
+  if (name && store) keys.add(`item:${name}|${store}`);
+  return keys;
+}
+
 export function createOfferId() {
   return crypto.randomBytes(6).toString('hex');
 }
 
 export function fingerprint(offer) {
   const name = normalizeKey(offer.name);
-  const url = String(offer.url ?? '').trim().toLowerCase();
-  const store = normalizeKey(offer.store);
-  const price = offer.price != null ? String(offer.price) : '';
-  return `${name}|${store}|${url}|${price}`;
+  const url = canonicalizeUrl(offer.url);
+  const store = normalizeStore(offer.store);
+  return `${name}|${store}|${url}`;
 }
 
 export function findDuplicates(offers, candidate, { excludeId } = {}) {
+  const targetKeys = identityKeys(candidate);
   const target = fingerprint(candidate);
-  const name = normalizeKey(candidate.name);
-  const url = String(candidate.url ?? '').trim().toLowerCase();
-  const externalId = String(candidate.externalId ?? '').trim();
-  return offers.filter((offer) => {
+  return (offers || []).filter((offer) => {
     if (excludeId && offer.id === excludeId) return false;
-    if ([OFFER_STATUS.CANCELLED, OFFER_STATUS.EXPIRED].includes(offer.status)) return false;
-    if (externalId && String(offer.externalId ?? '').trim() === externalId) return true;
-    if (fingerprint(offer) === target) return true;
-    if (url && String(offer.url ?? '').trim().toLowerCase() === url) return true;
-    if (name && normalizeKey(offer.name) === name && normalizeKey(offer.store) === normalizeKey(candidate.store)) {
-      return true;
+    if (INACTIVE.has(offer.status)) return false;
+    const keys = identityKeys(offer);
+    for (const key of targetKeys) {
+      if (keys.has(key)) return true;
     }
-    return false;
+    return fingerprint(offer) === target;
   });
+}
+
+export function publishedDuplicates(offers, candidate, { excludeId } = {}) {
+  return findDuplicates(offers, candidate, { excludeId }).filter(
+    (offer) => offer.status === OFFER_STATUS.PUBLISHED
+  );
+}
+
+export function duplicateMessage(duplicates = []) {
+  const published = duplicates.filter((item) => item.status === OFFER_STATUS.PUBLISHED);
+  const first = (published[0] || duplicates[0]) ?? null;
+  const id = first?.id ? ` (ID ${first.id})` : '';
+  if (published.length) {
+    return `Esta promoção já foi publicada no canal${id}. Não será enviada de novo.`;
+  }
+  if (duplicates.length) {
+    return `Esta promoção já está cadastrada${id}. Não será publicada de novo.`;
+  }
+  return 'Esta promoção já existe e não será repetida.';
 }
 
 function applyExpiry(offer, at = new Date()) {
@@ -112,16 +245,25 @@ export class OfferService {
       return { ok: false, error: exclusionMessage(analyzeExclusion(validation.offer, exclusionOptions).reasons) };
     }
 
-    const db = await this.storage.read();
-    const duplicates = findDuplicates(db.offers, validation.offer);
+    const candidate = {
+      ...validation.offer,
+      url: input.url || validation.offer.url,
+      resolvedProductUrl: input.resolvedProductUrl || null,
+      originalAffiliateUrl: input.originalAffiliateUrl || input.url || validation.offer.url,
+      asin: input.asin || null,
+      externalId: input.externalId ?? null
+    };
     const offer = {
       id: createOfferId(),
       ...validation.offer,
       category: preserveOptionalText(input.category),
       description: preserveOptionalText(input.description),
-      url: input.url || validation.offer.url,
+      url: candidate.url,
       imageUrl: input.imageUrl || validation.offer.imageUrl || null,
-      externalId: input.externalId ?? null,
+      resolvedProductUrl: candidate.resolvedProductUrl,
+      originalAffiliateUrl: candidate.originalAffiliateUrl || null,
+      asin: candidate.asin,
+      externalId: candidate.externalId,
       status: OFFER_STATUS.READY,
       createdAt: nowIso(),
       updatedAt: nowIso(),
@@ -151,7 +293,19 @@ export class OfferService {
       }
     }
 
+    let rejected = null;
     await this.storage.update((current) => {
+      const duplicates = findDuplicates(current.offers, candidate);
+      if (duplicates.length) {
+        rejected = {
+          ok: false,
+          duplicate: true,
+          duplicates,
+          existing: duplicates[0],
+          error: duplicateMessage(duplicates)
+        };
+        return current;
+      }
       current.offers.push(offer);
       current.history.push({
         at: nowIso(),
@@ -161,8 +315,14 @@ export class OfferService {
       });
       return current;
     });
+    if (rejected) return rejected;
 
-    return { ok: true, offer, duplicates };
+    return { ok: true, offer, duplicates: [] };
+  }
+
+  async findDuplicatesOf(candidate, { excludeId } = {}) {
+    const offers = await this.list();
+    return findDuplicates(offers, candidate, { excludeId });
   }
 
   async saveDraft(input, { actorId } = {}) {
@@ -243,11 +403,24 @@ export class OfferService {
       }
     }
 
+    let rejected = null;
     await this.storage.update((db) => {
+      const duplicates = findDuplicates(db.offers, next, { excludeId: id });
+      if (duplicates.length) {
+        rejected = {
+          ok: false,
+          duplicate: true,
+          duplicates,
+          existing: duplicates[0],
+          error: duplicateMessage(duplicates)
+        };
+        return db;
+      }
       db.offers = db.offers.map((item) => (item.id === id ? next : item));
       db.history.push({ at: nowIso(), action: 'update', offerId: id, actorId: actorId ?? null });
       return db;
     });
+    if (rejected) return rejected;
 
     return { ok: true, offer: next };
   }

@@ -146,6 +146,46 @@ test('recusa publicação sem link válido', async () => {
   assert.equal(result.ok, false);
 });
 
+test('recusa republicar oferta já publicada', async () => {
+  const sent = [];
+  const service = new PublishingService({
+    bot: {
+      async sendPhoto(chatId, photo, extra) {
+        sent.push({ method: 'sendPhoto', extra });
+        return { message_id: 1 };
+      },
+      async sendMessage(chatId, text, extra) {
+        sent.push({ method: 'sendMessage', text, extra });
+        return { message_id: 2 };
+      }
+    },
+    config: { channelId: '-100123' },
+    offerService: {
+      async list() {
+        return [{ ...completeOffer, id: 'same', status: 'publicada' }];
+      },
+      async markPublished() {
+        return { ok: true };
+      }
+    },
+    templateService: { async get() { return templateWithChannel(); } }
+  });
+  const already = await service.publish({ ...completeOffer, id: 'same', status: 'publicada' }, { actorId: 1 });
+  assert.equal(already.ok, false);
+  assert.equal(already.duplicate, true);
+  assert.equal(sent.length, 0);
+
+  const clone = await service.publish({
+    ...completeOffer,
+    id: 'other',
+    status: 'pronta',
+    url: `${completeOffer.url}&utm_campaign=repeat`
+  }, { actorId: 1 });
+  assert.equal(clone.ok, false);
+  assert.equal(clone.duplicate, true);
+  assert.equal(sent.length, 0);
+});
+
 test('ausência de fontes automáticas não quebra o modo manual', async () => {
   const sources = createConfiguredSources({ feedUrl: '' });
   assert.equal(sources.length, 0);

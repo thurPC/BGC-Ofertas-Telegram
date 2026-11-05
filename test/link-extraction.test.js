@@ -284,6 +284,24 @@ test('correção manual: link enviado no campo ausente completa a oferta', async
   assert.ok(sent.length > 0);
 });
 
+test('link repetido não inicia novo cadastro da mesma promoção', async () => {
+  const { ctx, bot, sent } = await buildCtx({
+    linkOptions: fakeOptions('<meta property="og:title" content="Teclado Mecanico"/><meta property="og:site_name" content="Shopee"/><meta property="product:price:amount" content="199.90"/>')
+  });
+  const created = await ctx.offerService.create({
+    name: 'Teclado Mecanico',
+    price: 199.9,
+    url: 'https://shopee.com.br/product/88/99?utm_source=canal',
+    store: 'Shopee'
+  }, { actorId: 77 });
+  assert.equal(created.ok, true);
+  const result = await handleOfferLink(bot, ctx, 77, 77, 'https://shopee.com.br/product/88/99');
+  assert.equal(result.ok, false);
+  assert.equal(result.duplicate, true);
+  assert.ok(sent.some((entry) => /já está cadastrada|já foi publicada|já existe/i.test(entry.text || '')));
+  assert.equal(getSession(77), null);
+});
+
 test('aprovação administrativa: publicar via callback exige admin e não usa botões inline no canal', async () => {
   const { ctx, bot, sent, handlers, config } = await buildCtx();
   registerCallbackHandler(bot, ctx);

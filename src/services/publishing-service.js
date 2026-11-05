@@ -1,7 +1,7 @@
 import { logger } from '../logger.js';
 import { chooseSendMode, formatOfferHtml } from '../formatters/offer-message.js';
 import { analyzeExclusion, exclusionMessage } from './exclusion-filter.js';
-import { OFFER_STATUS } from './offer-service.js';
+import { duplicateMessage, findDuplicates, fingerprint, identityKeys, OFFER_STATUS } from './offer-service.js';
 import { defaultTemplate, mergeTemplate } from './template-service.js';
 import { validateHttpUrl } from './validation-service.js';
 
@@ -32,6 +32,7 @@ export class PublishingService {
     this.config = config;
     this.offerService = offerService;
     this.templateService = templateService;
+    this.inFlight = new Set();
   }
 
   async resolveTemplate() {
@@ -58,12 +59,30 @@ export class PublishingService {
     if (!offer.url) return { ok: false, error: 'Não é possível publicar sem um link válido.' };
     const url = validateHttpUrl(offer.url, { required: true });
     if (!url.ok) return { ok: false, error: url.error };
-    if (![OFFER_STATUS.READY, OFFER_STATUS.DRAFT].includes(offer.status) && offer.status !== OFFER_STATUS.PUBLISHED) {
+    if (offer.status === OFFER_STATUS.PUBLISHED) {
+      return { ok: false, error: duplicateMessage([{ ...offer, status: OFFER_STATUS.PUBLISHED }]), duplicate: true };
+    }
+    if (![OFFER_STATUS.READY, OFFER_STATUS.DRAFT].includes(offer.status)) {
       if (offer.status === OFFER_STATUS.EXPIRED) return { ok: false, error: 'A oferta está expirada.' };
       if (offer.status === OFFER_STATUS.CANCELLED) return { ok: false, error: 'A oferta foi cancelada.' };
+      return { ok: false, error: 'A oferta não está pronta para publicação.' };
     }
     if (!offer.name || offer.price == null) {
       return { ok: false, error: 'A oferta ainda não está completa para publicação.' };
+    }
+    return { ok: true };
+  }
+
+  async assertNotDuplicate(offer) {
+    if (!this.offerService?.list) return { ok: true };
+    const existing = await this.offerService.list();
+    const duplicates = findDuplicates(existing, offer, { excludeId: offer?.id });
+    const published = duplicates.filter((item) => item.status === OFFER_STATUS.PUBLISHED);
+    if (published.length) {
+      return { ok: false, duplicate: true, duplicates: published, error: duplicateMessage(published) };
+    }
+    if (offer?.status === OFFER_STATUS.PUBLISHED) {
+      return { ok: false, duplicate: true, duplicates: [offer], error: duplicateMessage([offer]) };
     }
     return { ok: true };
   }
@@ -100,8 +119,19 @@ export class PublishingService {
     const check = await this.canPublish(offer);
     if (!check.ok) return check;
 
+    const uniqueness = await this.assertNotDuplicate(offer);
+    if (!uniqueness.ok) return uniqueness;
+
     const chatId = targetChatId || this.config.channelId;
     if (!chatId) return { ok: false, error: 'Canal de publicação não configurado.' };
+
+    const lockKeys = [`fp:${fingerprint(offer)}`];
+    if (offer.id) lockKeys.push(`id:${offer.id}`);
+    for (const key of identityKeys(offer)) lockKeys.push(`ik:${key}`);
+    if (lockKeys.some((key) => this.inFlight.has(key))) {
+      return { ok: false, duplicate: true, error: duplicateMessage([{ ...offer, status: OFFER_STATUS.PUBLISHED }]) };
+    }
+    for (const key of lockKeys) this.inFlight.add(key);
 
     const needsImageReview = !offer.imageUrl;
     try {
@@ -113,6 +143,8 @@ export class PublishingService {
     } catch (error) {
       logger.error('Erro ao publicar oferta.', error.message);
       return { ok: false, error: publicError(error) };
+    } finally {
+      for (const key of lockKeys) this.inFlight.delete(key);
     }
   }
 

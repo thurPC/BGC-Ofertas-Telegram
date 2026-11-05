@@ -3,7 +3,13 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { findDuplicates, OfferService, OFFER_STATUS } from '../src/services/offer-service.js';
+import {
+  canonicalizeUrl,
+  findDuplicates,
+  identityKeys,
+  OfferService,
+  OFFER_STATUS
+} from '../src/services/offer-service.js';
 import { JsonStorage } from '../src/storage/json-storage.js';
 
 function sample(extra = {}) {
@@ -40,7 +46,7 @@ test('cria, lista e publica estados da oferta', async () => {
   assert.ok(published.offer.publishedAt);
 });
 
-test('detecta duplicatas pelo link e pelo nome+loja sem excluir automaticamente', async () => {
+test('detecta duplicatas pelo link, ASIN e nome+loja', async () => {
   const existing = [{ id: '1', name: 'Placa de vídeo Gamer', store: 'Loja Gamer', url: 'https://loja.example.com/gpu', price: 10, status: 'pronta' }];
   const dupes = findDuplicates(existing, {
     name: 'Placa de vídeo Gamer',
@@ -56,6 +62,39 @@ test('detecta duplicatas pelo link e pelo nome+loja sem excluir automaticamente'
     price: 20
   });
   assert.equal(distinct.length, 0);
+});
+
+test('reconhece o mesmo produto mesmo com parâmetros de afiliado diferentes', () => {
+  const existing = [{
+    id: 'amz1',
+    name: 'Fone Gamer',
+    store: 'Amazon Brasil',
+    url: 'https://www.amazon.com.br/dp/B09LKE939X?tag=bgc-20',
+    status: 'publicada'
+  }];
+  const sameAsin = findDuplicates(existing, {
+    name: 'Fone Gamer Havit',
+    store: 'Amazon',
+    url: 'https://www.amazon.com.br/Fone-Havit/dp/B09LKE939X?psc=1&tag=outro-20'
+  });
+  assert.equal(sameAsin.length, 1);
+  assert.equal(canonicalizeUrl('https://www.amazon.com.br/dp/B09LKE939X?tag=bgc-20'), 'https://amazon.com.br/dp/B09LKE939X');
+  assert.ok([...identityKeys(existing[0])].includes('asin:B09LKE939X'));
+});
+
+test('recusa cadastrar de novo a mesma promoção', async () => {
+  const { service } = await tempService();
+  const first = await service.create(sample());
+  assert.equal(first.ok, true);
+  const second = await service.create(sample({
+    url: 'https://loja.example.com/gpu?utm_source=canal&afiliado=bgc',
+    price: '1899,00'
+  }));
+  assert.equal(second.ok, false);
+  assert.equal(second.duplicate, true);
+  assert.match(second.error, /já está cadastrada|já foi publicada|já existe/i);
+  const listed = await service.list();
+  assert.equal(listed.length, 1);
 });
 
 test('grava e lê JSON com atualização concorrente serializada', async () => {

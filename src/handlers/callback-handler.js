@@ -304,27 +304,26 @@ async function handleWizardCallback(bot, ctx, query, data, userId, chatId) {
     } else {
       const created = await ctx.offerService.create(session.data, { actorId: userId });
       if (!created.ok) {
-        await safeAnswer(bot, query, 'Dados inválidos.');
+        await safeAnswer(bot, query, created.duplicate ? 'Já publicada.' : 'Dados inválidos.');
         await bot.sendMessage(chatId, (created.errors || [created.error]).join('\n'));
+        if (created.duplicate) clearSession(userId);
         return;
       }
       offer = created.offer;
-      if (created.duplicates?.length) {
-        await bot.sendMessage(
-          chatId,
-          `Atenção: possível duplicata de ${created.duplicates.length} oferta(s) já cadastrada(s). A publicação segue porque você confirmou.`
-        );
-      }
     }
 
     const result = await ctx.publishingService.publish(offer, { actorId: userId });
     if (!result.ok) {
       await safeAnswer(bot, query, result.error);
-      await bot.sendMessage(
-        chatId,
-        `${result.error}\nA oferta foi salva como pronta com ID <code>${offer.id}</code>. Use /publicar ${offer.id} depois.`,
-        { parse_mode: 'HTML' }
-      );
+      if (result.duplicate) {
+        await bot.sendMessage(chatId, result.error);
+      } else {
+        await bot.sendMessage(
+          chatId,
+          `${result.error}\nA oferta foi salva como pronta com ID <code>${offer.id}</code>. Use /publicar ${offer.id} depois.`,
+          { parse_mode: 'HTML' }
+        );
+      }
       clearSession(userId);
       return;
     }

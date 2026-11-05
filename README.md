@@ -14,7 +14,7 @@ Esta primeira versão prioriza o **cadastro manual**, a **prévia** e a **confir
 - Publicação no canal via `sendPhoto` ou `sendMessage`, com foto real quando disponível
 - Link de compra no texto da mensagem, sem botões inline no canal
 - Estados: rascunho, pronta, publicada, expirada e cancelada
-- Detecção de possíveis duplicatas (sem exclusão automática)
+- Bloqueio de promoções repetidas (mesmo produto, link, ASIN ou cadastro já publicado)
 - Armazenamento JSON com gravação atômica e controle de concorrência
 - Arquitetura pronta para fontes automáticas autorizadas (desligada por padrão)
 
@@ -230,7 +230,7 @@ https://raw.githubusercontent.com/thurPC/BGC-Ofertas-Telegram/main/feed.json
 
 Mercado Livre, Amazon e Shopee **não** estão integrados por API própria. Só existe a leitura do feed configurado. Não inventamos endpoints, chaves ou scraping.
 
-Se nenhuma fonte estiver configurada, o modo manual funciona normalmente. Com o feed configurado e `OFFER_AUTO_PUBLISH=false` (padrão), o bot **consulta** o JSON, mas **não importa** e **não publica** no canal. Duplicatas (mesmo `id` externo, mesmo link ou mesmo nome+loja) não são importadas de novo quando a importação/publicação automática estiver em uso.
+Se nenhuma fonte estiver configurada, o modo manual funciona normalmente. Com o feed configurado e `OFFER_AUTO_PUBLISH=false` (padrão), o bot **consulta** o JSON, mas **não importa** e **não publica** no canal. Duplicatas (mesmo `id` externo, mesmo produto/ASIN, mesmo link canônico ou mesmo nome+loja) não são cadastradas nem republicadas. Links com parâmetros de afiliado diferentes do mesmo item também são tratados como repetição.
 
 Não faça scraping indiscriminado, não contorne CAPTCHA e não viole termos de serviço.
 

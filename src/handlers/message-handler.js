@@ -27,6 +27,7 @@ import {
 import { analyzeExclusion, isExcludedProduct } from '../services/exclusion-filter.js';
 import { describeOperatingHours } from '../services/settings-service.js';
 import { categoriesNote, clearSettingsSession, getSettingsSession } from '../commands/settings.js';
+import { duplicateMessage, findDuplicates } from '../services/offer-service.js';
 import { logger } from '../logger.js';
 
 const SESSIONS = new Map();
@@ -85,6 +86,19 @@ export async function handleOfferLink(bot, ctx, chatId, userId, link) {
       if (associated?.offer) extracted = associated.offer;
     } catch {
       // Cupons indisponíveis não interrompem o cadastro automático.
+    }
+  }
+
+  if (ctx.offerService?.list) {
+    const existing = await ctx.offerService.list();
+    const duplicates = findDuplicates(existing, extracted);
+    if (duplicates.length) {
+      logger.info('Link ignorado por duplicata.', { offerId: duplicates[0]?.id });
+      await bot.sendMessage(chatId, duplicateMessage(duplicates), {
+        parse_mode: 'HTML',
+        disable_web_page_preview: true
+      });
+      return { ok: false, duplicate: true, duplicates };
     }
   }
 
