@@ -9,10 +9,12 @@ import { registerPublicCommands } from './src/commands/public.js';
 import { registerMessageHandler } from './src/handlers/message-handler.js';
 import { registerCallbackHandler } from './src/handlers/callback-handler.js';
 import { registerTemplateCallbacks, registerTemplateCommand } from './src/commands/template.js';
+import { registerCategoryCallbacks, registerCategoryCommand } from './src/commands/category.js';
 import { OfferService } from './src/services/offer-service.js';
 import { PublishingService } from './src/services/publishing-service.js';
 import { SchedulerService } from './src/services/scheduler-service.js';
 import { TemplateService } from './src/services/template-service.js';
+import { CategoryService } from './src/services/category-service.js';
 import { JsonStorage } from './src/storage/json-storage.js';
 import { createConfiguredSources } from './src/sources/json-feed-source.js';
 import { InstanceLock } from './src/process-lock.js';
@@ -87,6 +89,7 @@ async function main() {
 
   const offerService = new OfferService(storage);
   const templateService = new TemplateService(storage);
+  const categoryService = new CategoryService(storage, config);
   bot = createBot(config.token, { polling: true });
   const publishingService = new PublishingService({ bot, config, offerService, templateService });
   const shopeeClient = createShopeeAffiliateClient(config);
@@ -99,19 +102,25 @@ async function main() {
   });
 
   const linkOptions = { shopeeClient };
-  const ctx = { config, offerService, publishingService, scheduler, templateService, linkOptions };
+  const ctx = { config, offerService, publishingService, scheduler, templateService, categoryService, linkOptions };
 
   registerPublicCommands(bot);
   registerMessageHandler(bot, ctx);
   registerCallbackHandler(bot, ctx);
   registerTemplateCommand(bot, ctx);
   registerTemplateCallbacks(bot, ctx);
+  registerCategoryCommand(bot, ctx);
+  registerCategoryCallbacks(bot, ctx);
+
+  const categorySettings = await categoryService.get();
+  scheduler.applyCategorySettings(categorySettings);
 
   await bot.setMyCommands([
     { command: 'start', description: 'Apresentação do BGC Ofertas' },
     { command: 'ajuda', description: 'Lista de comandos' },
     { command: 'sobre', description: 'Sobre o BGC Ofertas' },
-    { command: 'modelo', description: 'Modelo de publicação (equipe)' }
+    { command: 'modelo', description: 'Modelo de publicação (equipe)' },
+    { command: 'categoria', description: 'Categorias da automação (equipe)' }
   ]);
 
   scheduler.start();

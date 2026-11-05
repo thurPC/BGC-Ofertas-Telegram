@@ -5,8 +5,9 @@ import { applyOfferFilters, isWithinAllowedHours } from '../sources/source-inter
 import { findDuplicates } from './offer-service.js';
 import { isBookOffer } from './book-filter.js';
 import { validateOfferInput } from './validation-service.js';
-import { rankOffers } from './offer-scorer.js';
+import { detectCategory, rankOffers } from './offer-scorer.js';
 import { evaluateReadiness } from './readiness-service.js';
+import { enabledCategories, mergeCategorySettings } from './category-service.js';
 import { formatOfferHtml } from '../formatters/offer-message.js';
 
 function sleep(ms) {
@@ -34,6 +35,25 @@ export class SchedulerService {
     this.timer = null;
     this.running = false;
     this.lockFile = lockFile || (config?.dataDir ? path.join(config.dataDir, 'scheduler.lock') : null);
+  }
+
+  applyCategorySettings(settings) {
+    const resolved = mergeCategorySettings(settings);
+    this.config.excludeBooks = resolved.excludeBooks !== false;
+    this.config.enabledCategories = resolved.enabled;
+    const categories = enabledCategories(resolved);
+    const allowed = new Set(resolved.enabled);
+    const envKeywords = (this.config.shopeeKeywords || []).filter((keyword) => {
+      const category = detectCategory({ name: keyword });
+      return !category || allowed.has(category);
+    });
+    const keywords = [...categories.map((item) => item.keywords[0]), ...envKeywords, ...resolved.extraKeywords];
+    for (const source of this.sources) {
+      if (typeof source.applySearchOptions === 'function') {
+        source.applySearchOptions({ categories, keywords });
+      }
+    }
+    return resolved;
   }
 
   hasConfiguredSource() {
@@ -139,8 +159,13 @@ export class SchedulerService {
     const unique = [];
     const seen = new Set();
     let duplicates = 0;
+    const enabled = Array.isArray(this.config.enabledCategories) ? this.config.enabledCategories : [];
     for (const item of filtered) {
       if (isBookOffer(item, this.config)) continue;
+      if (enabled.length) {
+        const category = item.category || detectCategory(item);
+        if (category && !enabled.includes(category)) continue;
+      }
       const validation = validateOfferInput(item);
       if (!validation.ok) continue;
       const candidate = {

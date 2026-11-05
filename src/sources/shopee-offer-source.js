@@ -16,7 +16,7 @@ function flattenKeywords(categories = DEFAULT_CATEGORIES, extra = []) {
     .map((keyword) => String(keyword).trim())
     .filter(Boolean)
     .map((keyword) => ({ keyword, category: detectCategory({ name: keyword }) }));
-  const fromCategories = categories.map((category) => ({
+  const fromCategories = (categories || []).map((category) => ({
     keyword: category.keywords[0],
     category: category.id
   }));
@@ -41,6 +41,13 @@ export class ShopeeOfferSource extends OfferSource {
     this.pageDelayMs = Number.isFinite(options.pageDelayMs) && options.pageDelayMs >= 0 ? options.pageDelayMs : 200;
     this.keywordDelayMs = Number.isFinite(options.keywordDelayMs) && options.keywordDelayMs >= 0 ? options.keywordDelayMs : 150;
     this.keywords = flattenKeywords(options.categories || DEFAULT_CATEGORIES, options.keywords || []);
+  }
+
+  applySearchOptions({ categories, keywords } = {}) {
+    const extras = Array.isArray(keywords) ? keywords : [];
+    this.keywords = extras.length
+      ? flattenKeywords([], extras)
+      : flattenKeywords(categories || DEFAULT_CATEGORIES, []);
   }
 
   isConfigured() {
