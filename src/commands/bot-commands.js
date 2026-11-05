@@ -3,7 +3,10 @@ import { logger } from '../logger.js';
 export const PUBLIC_BOT_COMMANDS = [
   { command: 'start', description: 'Apresentação do BGC Ofertas' },
   { command: 'ajuda', description: 'Lista de comandos' },
-  { command: 'sobre', description: 'Sobre o BGC Ofertas' }
+  { command: 'sobre', description: 'Sobre o BGC Ofertas' },
+  { command: 'modelo', description: 'Modelo de publicação (equipe)' },
+  { command: 'categorias', description: 'Painel de categorias (equipe)' },
+  { command: 'horario', description: 'Horário de operação 24h (equipe)' }
 ];
 
 export const ADMIN_BOT_COMMANDS = [
@@ -12,9 +15,6 @@ export const ADMIN_BOT_COMMANDS = [
   { command: 'novaoferta', description: 'Cadastro de oferta' },
   { command: 'ofertas', description: 'Lista ofertas cadastradas' },
   { command: 'status', description: 'Estado operacional' },
-  { command: 'modelo', description: 'Modelo de publicação' },
-  { command: 'categorias', description: 'Painel de categorias' },
-  { command: 'horario', description: 'Horário de operação 24h' },
   { command: 'publicar', description: 'Publicar oferta pelo ID' },
   { command: 'cancelar', description: 'Cancelar cadastro em andamento' },
   { command: 'ajuda_admin', description: 'Ajuda administrativa' }

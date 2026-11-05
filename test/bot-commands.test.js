@@ -7,9 +7,9 @@ import {
   registerBotMenuCommands
 } from '../src/commands/bot-commands.js';
 
-test('menu público não lista comandos administrativos', () => {
+test('menu padrão inclui categorias e horario', () => {
   const names = PUBLIC_BOT_COMMANDS.map((item) => item.command);
-  assert.deepEqual(names, ['start', 'ajuda', 'sobre']);
+  assert.deepEqual(names, ['start', 'ajuda', 'sobre', 'modelo', 'categorias', 'horario']);
 });
 
 test('menu administrativo inclui categorias e horario', () => {
