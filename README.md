@@ -131,6 +131,9 @@ Somente IDs em `ADMIN_IDS`. A verificação ocorre também nos callbacks dos bot
 | `/publicar ID` | Publica uma oferta validada |
 | `/ofertas` | Lista ofertas cadastradas |
 | `/status` | Estado operacional, sem dados sensíveis |
+| `/modelo` | Edita o modelo de publicação |
+| `/categorias` | Painel de categorias (adicionar, ativar, desativar e remover) |
+| `/horario` | Horário de operação no formato 24h, sem minutos |
 | `/ajuda_admin` | Instruções administrativas |
 
 ## Cadastro e publicação de ofertas

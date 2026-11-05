@@ -10,6 +10,7 @@ import { registerMessageHandler } from './src/handlers/message-handler.js';
 import { registerCallbackHandler } from './src/handlers/callback-handler.js';
 import { registerTemplateCallbacks, registerTemplateCommand } from './src/commands/template.js';
 import { registerSettingsCallbacks, registerSettingsCommand } from './src/commands/settings.js';
+import { registerBotMenuCommands } from './src/commands/bot-commands.js';
 import { OfferService } from './src/services/offer-service.js';
 import { PublishingService } from './src/services/publishing-service.js';
 import { SchedulerService } from './src/services/scheduler-service.js';
@@ -112,12 +113,7 @@ async function main() {
   registerSettingsCommand(bot, ctx);
   registerSettingsCallbacks(bot, ctx);
 
-  await bot.setMyCommands([
-    { command: 'start', description: 'Apresentação do BGC Ofertas' },
-    { command: 'ajuda', description: 'Lista de comandos' },
-    { command: 'sobre', description: 'Sobre o BGC Ofertas' },
-    { command: 'modelo', description: 'Modelo de publicação (equipe)' }
-  ]);
+  await registerBotMenuCommands(bot, config);
 
   scheduler.start();
   logger.info('BGC Ofertas iniciado em long polling.');
