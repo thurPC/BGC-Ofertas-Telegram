@@ -286,8 +286,10 @@ test('prevencao de ofertas duplicadas permanece apos associacao', async () => {
   const first = await offerService.create(sample);
   const second = await offerService.create(sample);
   assert.equal(first.ok, true);
-  assert.equal(second.ok, true);
-  assert.equal(second.duplicates.length, 1);
+  assert.equal(second.ok, false);
+  assert.equal(second.duplicate, true);
+  const listed = await offerService.list();
+  assert.equal(listed.length, 1);
 });
 
 test('falha de cupons sem interrupcao das ofertas normais', async () => {
