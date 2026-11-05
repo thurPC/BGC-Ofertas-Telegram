@@ -265,6 +265,7 @@ export class OfferService {
       selected: summary.selected ?? 0,
       duplicates: summary.duplicates ?? 0,
       rejected: summary.rejected ?? 0,
+      excludedBooks: summary.excludedBooks ?? 0,
       note: summary.note ?? null
     };
     await this.storage.update((db) => {

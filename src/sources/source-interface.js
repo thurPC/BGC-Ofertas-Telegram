@@ -1,3 +1,5 @@
+import { isBookOffer } from '../services/book-filter.js';
+
 export class OfferSource {
   constructor(name) {
     this.name = name;
@@ -38,6 +40,7 @@ export function normalizeFetchedOffer(raw, sourceName) {
     url: preserveText(raw?.url ?? raw?.link),
     store: preserveText(raw?.store ?? raw?.shop) || sourceName,
     validUntil: raw?.validUntil ?? null,
+    description: preserveText(raw?.description ?? raw?.productDescription ?? raw?.desc),
     externalId: preserveText(raw?.id ?? raw?.externalId),
     source: sourceName,
     fetchedAt: raw?.fetchedAt ?? new Date().toISOString()
@@ -58,6 +61,7 @@ export function applyOfferFilters(offers, config) {
       const store = String(offer.store ?? '').toLowerCase();
       if (!config.allowedStores.includes(store)) return false;
     }
+    if (isBookOffer(offer, config)) return false;
     return true;
   });
 }

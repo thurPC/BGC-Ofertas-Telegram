@@ -97,7 +97,8 @@ export class ShopeeOfferSource extends OfferSource {
         imageUrl: product.imageUrl,
         url: product.url,
         store: product.store || 'Shopee',
-        validUntil: product.validUntil
+        validUntil: product.validUntil,
+        description: product.description
       },
       'Shopee'
     );

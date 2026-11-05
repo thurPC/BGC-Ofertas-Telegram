@@ -1,5 +1,6 @@
 import { calculateDiscount } from './validation-service.js';
 import { isShopeeAffiliateUrl } from './shopee-affiliate-client.js';
+import { isBookOffer } from './book-filter.js';
 
 export const DEFAULT_CATEGORIES = [
   {
@@ -89,6 +90,10 @@ export function scoreOffer(offer, context = {}) {
 
   if (!hasEssentialOfferData(offer)) {
     return { score: 0, reject: 'incomplete', discountPercent: null, category: null, reasons };
+  }
+
+  if (isBookOffer(offer, context)) {
+    return { score: 0, reject: 'book', discountPercent: null, category: detectCategory(offer), reasons };
   }
 
   const key = offer.externalId || String(offer.url ?? '').trim().toLowerCase();

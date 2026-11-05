@@ -3,6 +3,7 @@ import path from 'node:path';
 import { logger } from '../logger.js';
 import { applyOfferFilters, isWithinAllowedHours } from '../sources/source-interface.js';
 import { findDuplicates } from './offer-service.js';
+import { isBookOffer } from './book-filter.js';
 import { validateOfferInput } from './validation-service.js';
 import { rankOffers } from './offer-scorer.js';
 import { evaluateReadiness } from './readiness-service.js';
@@ -133,11 +134,13 @@ export class SchedulerService {
   }
 
   #selectCandidates(collected, existing) {
+    const excludedBooks = (collected || []).filter((item) => isBookOffer(item, this.config)).length;
     const filtered = applyOfferFilters(collected, this.config);
     const unique = [];
     const seen = new Set();
     let duplicates = 0;
     for (const item of filtered) {
+      if (isBookOffer(item, this.config)) continue;
       const validation = validateOfferInput(item);
       if (!validation.ok) continue;
       const candidate = {
@@ -151,6 +154,7 @@ export class SchedulerService {
         sales: item.sales,
         ratingStar: item.ratingStar,
         category: item.category,
+        description: item.description,
         priceDiscountRate: item.priceDiscountRate
       };
       const key = candidate.externalId || String(candidate.url || '').toLowerCase();
@@ -170,9 +174,17 @@ export class SchedulerService {
       publishedKeys: duplicateKeys(existing),
       limit: this.config.maxOffersPerRun,
       minScore: this.config.minOfferScore,
-          requireAffiliateLink: this.config.requireAffiliateLink === true
+      requireAffiliateLink: this.config.requireAffiliateLink === true,
+      excludeBooks: this.config.excludeBooks,
+      bookExcludeKeywords: this.config.bookExcludeKeywords,
+      bookDeviceAllowKeywords: this.config.bookDeviceAllowKeywords
     });
-    return { ...ranked, duplicates, invalid: filtered.length - unique.length - duplicates };
+    return {
+      ...ranked,
+      duplicates,
+      excludedBooks,
+      invalid: filtered.length - unique.length - duplicates
+    };
   }
 
   async importFromSources({ publish = false, collected, sourceErrors, existing, selection } = {}) {
@@ -183,6 +195,7 @@ export class SchedulerService {
         imported: 0,
         published: 0,
         duplicates: 0,
+        excludedBooks: 0,
         errors: [],
         note: 'Busca automática depende de integração real. Nenhuma fonte está configurada.'
       };
@@ -201,6 +214,10 @@ export class SchedulerService {
     const seenKeys = [];
 
     for (const item of chosen.selected) {
+      if (isBookOffer(item, this.config)) {
+        chosen.excludedBooks = (chosen.excludedBooks || 0) + 1;
+        continue;
+      }
       const created = await this.offerService.create(
         { ...item, source: item.source || 'json-feed', externalId: item.externalId },
         { actorId: 'scheduler' }
@@ -232,6 +249,7 @@ export class SchedulerService {
         selected: chosen.selected.length,
         duplicates: chosen.duplicates,
         rejected: chosen.rejected.length,
+        excludedBooks: chosen.excludedBooks ?? 0,
         seenKeys
       });
     }
@@ -244,6 +262,7 @@ export class SchedulerService {
       prepared: prepared.length,
       selected: chosen.selected.length,
       duplicates: chosen.duplicates,
+      excludedBooks: chosen.excludedBooks ?? 0,
       rejected: chosen.rejected.length,
       errors
     };
@@ -292,6 +311,7 @@ export class SchedulerService {
             selected: selection.selected.length,
             duplicates: selection.duplicates,
             rejected: selection.rejected.length,
+            excludedBooks: selection.excludedBooks ?? 0,
             note: 'dry-run'
           });
         }
@@ -303,6 +323,7 @@ export class SchedulerService {
           prepared: selection.selected.length,
           selected: selection.selected.length,
           duplicates: selection.duplicates,
+          excludedBooks: selection.excludedBooks ?? 0,
           rejected: selection.rejected.length,
           errors: sourceErrors,
           messages,

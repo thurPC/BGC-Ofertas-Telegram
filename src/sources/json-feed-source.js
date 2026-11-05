@@ -58,6 +58,7 @@ export function parseFeedPayload(payload, sourceName = 'json-feed') {
       url: normalized.url || validation.offer.url,
       imageUrl: normalized.imageUrl || validation.offer.imageUrl,
       externalId: normalized.externalId,
+      description: normalized.description,
       source: sourceName,
       fetchedAt: normalized.fetchedAt,
       discountPercent: calculateDiscount(validation.offer.previousPrice, validation.offer.price)
