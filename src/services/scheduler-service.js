@@ -89,7 +89,13 @@ export class SchedulerService {
 
     const existing = await this.offerService.list();
     const { collected, sourceErrors } = await this.collectFromSources();
-    const contentBlocked = collected.filter((item) => isExcludedProduct(item, this.config)).length;
+    const blockedItems = collected.filter((item) => isExcludedProduct(item, this.config));
+    const contentBlocked = blockedItems.length;
+    if (contentBlocked > 0) {
+      logger.info(`Filtro de conteúdo: ${contentBlocked} item(ns) de livro/publicação descartado(s) na seleção.`, {
+        names: blockedItems.map((item) => item.name).slice(0, 20)
+      });
+    }
     const filtered = applyOfferFilters(collected, this.config).slice(0, this.config.maxOffersPerRun);
     const errors = [...sourceErrors];
     let imported = 0;

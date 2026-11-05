@@ -53,6 +53,10 @@ export function parseFeedPayload(payload, sourceName = 'json-feed') {
         name: normalized.name,
         errors: [exclusionMessage(analyzeExclusion(normalized).reasons)]
       });
+      logger.info('Item de livro/publicação ignorado no parse do feed.', {
+        name: normalized.name,
+        reasons: analyzeExclusion(normalized).reasons
+      });
       return;
     }
     const validation = validateOfferInput(normalized);

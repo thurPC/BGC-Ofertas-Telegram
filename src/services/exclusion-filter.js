@@ -41,7 +41,35 @@ export const DEFAULT_EXCLUDED_CATEGORIES = [
   'enciclopedia',
   'enciclopédias',
   'dicionario',
-  'dicionários'
+  'dicionários',
+  'literatura',
+  'literatura brasileira',
+  'literatura estrangeira',
+  'literatura infantil',
+  'literatura juvenil',
+  'literatura infanto juvenil',
+  'romance',
+  'romances',
+  'ficcao',
+  'ficção',
+  'fantasia',
+  'fantasia epica',
+  'distopia',
+  'suspense',
+  'thriller',
+  'biografia',
+  'biografias',
+  'autobiografia',
+  'poesia',
+  'poesias',
+  'conto',
+  'contos',
+  'cronica',
+  'cronicas',
+  'autoajuda',
+  'auto ajuda',
+  'historia em quadrinhos',
+  'historia em quadrinho'
 ];
 
 export const DEFAULT_EXCLUDED_KEYWORDS = [
@@ -72,7 +100,25 @@ export const DEFAULT_EXCLUDED_KEYWORDS = [
   'versao kindle',
   'formato kindle',
   'best seller',
-  'bestseller'
+  'bestseller',
+  'capa dura',
+  'capa comum',
+  'capa flexivel',
+  'brochura',
+  'livro de bolso',
+  'edicao de bolso',
+  'box de livros',
+  'box com livros',
+  'box livro',
+  'kit de livros',
+  'coletanea',
+  'colecao de livros',
+  'edicao comentada',
+  'edicao especial de aniversario',
+  'isbn',
+  'editora',
+  'obra literaria',
+  'obra completa'
 ];
 
 // Indicadores fortes de que o item é um DISPOSITIVO (hardware) e não um livro:
@@ -111,6 +157,47 @@ const EBOOK_DEVICE_OVERRIDES = [
   'para o kindle',
   'em kindle',
   'no kindle'
+];
+
+// Padrões editoriais presentes em páginas de venda de livros, mesmo quando o
+// título não traz a palavra "livro". São específicos o bastante para não
+// atingir eletrônicos (ex.: "controle de volume", "caixa de som").
+const EDITORIAL_PATTERNS = [
+  /\(livro\s+\d+/i, // "Harry Potter e a Pedra Filosofal (Livro 1)"
+  /\(volume\s*\d+/i, // "Box Harry Potter (Volume 1)"
+  /\(\d+\s*volumes?\)/i, // "Box Game of Thrones (7 volumes)"
+  /box\b[^)]*\b(?:livros?|colecao|obra|edi[çc]ao|volumes?)/i, // "Box Harry Potter"
+  /kit\b[^)]*\b(?:livros?|colecao|obras)/i,
+  /livro\s+\d+\s+da\s+cole[cç][aã]o/i,
+  /s[eé]rie\s+(?:de\s+)?livros/i,
+  /obra\s+(?:completa|completas)/i
+];
+
+// Editoras/livrarias conhecidas do mercado brasileiro usadas como reforço
+// quando aparecem em título/descrição junto de outro contexto editorial.
+const PUBLISHERS = [
+  'companhia das letras',
+  'editora intrinseca',
+  'editora rocco',
+  'editora sextante',
+  'editora arqueiro',
+  'editora globo',
+  'globo livros',
+  'principis',
+  'via leitura',
+  'antofagica',
+  'autentica',
+  'editora darkside',
+  'darkside books',
+  'novo conceito',
+  'editora aleph',
+  'editora planeta',
+  'editora objetiva',
+  'editora saraiva',
+  'editora moderna',
+  'editora ftc',
+  'bv lavradores',
+  'editora intrínseca'
 ];
 
 const MANGA_CONTEXT = [
@@ -183,6 +270,11 @@ export function analyzeExclusion(product, options = {}) {
   const text = `${titleText} ${descriptionText}`.trim();
   const reasons = [];
 
+  // Metadados estruturados de livro (JSON-LD Book) ou flag explicita do extrator.
+  if (product?.isBook === true || /^book$/i.test(String(product?.['@type'] ?? ''))) {
+    reasons.push('metadados: livro (JSON-LD Book)');
+  }
+
   if (categoryText) {
     for (const term of categories) {
       if (categoryMatches(categoryText, term)) {
@@ -202,6 +294,19 @@ export function analyzeExclusion(product, options = {}) {
 
   if (hasWord(text, 'manga') && isMangaContextual(text)) {
     reasons.push('palavra-chave: manga');
+  }
+
+  // Padrões editoriais ajudam a detectar livros cujo título não traz a palavra
+  // "livro" (ex.: "Dom Casmurro (Edição de Bolso)", "Box Game of Thrones 7 volumes").
+  for (const pattern of EDITORIAL_PATTERNS) {
+    if (pattern.test(text)) {
+      reasons.push(`padrão editorial: ${pattern.source}`);
+      break;
+    }
+  }
+
+  if (PUBLISHERS.some((name) => text.includes(normalizeText(name)))) {
+    reasons.push('editora detectada');
   }
 
   if (reasons.length && (isDeviceHardware(text) || categoryContainsDevice(categoryText))) {

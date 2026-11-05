@@ -127,6 +127,35 @@ test('permite produto de tecnologia genérico sem termos de livro', () => {
   }
 });
 
+test('bloqueia livro pelo gênero/categoria editorial mesmo com título limpo', () => {
+  assert.equal(isExcludedProduct(product('A Biblioteca da Meia-Noite', { category: 'Romance, Literatura' })), true);
+  assert.equal(isExcludedProduct(product('1984', { category: 'Ficção Científica' })), true);
+  assert.equal(isExcludedProduct(product('Dom Casmurro', { category: 'Literatura Brasileira' })), true);
+  assert.equal(isExcludedProduct(product('O Alquimista', { category: 'Romance' })), true);
+  assert.equal(isExcludedProduct(product('É assim que acaba', { description: 'Editora Sextante' })), true);
+  assert.equal(isExcludedProduct(product('Box Game of Thrones (7 volumes)')), true);
+  assert.equal(isExcludedProduct(product('Harry Potter - Livro 1')), true);
+  assert.equal(isExcludedProduct(product('O Hobbit (Edição de Bolso)')), true);
+  assert.equal(isExcludedProduct(product('Dom Casmurro (Capa comum)')), true);
+});
+
+test('usa metadados estruturados de livro (JSON-LD Book) na exclusão', () => {
+  assert.equal(isExcludedProduct({ ...product('Wonder'), isBook: true }), true);
+  assert.equal(isExcludedProduct({ ...product('Some Title'), '@type': 'Book' }), true);
+  assert.equal(isExcludedProduct(product('Notebook Dell', {})), false);
+});
+
+test('não bloqueia produtos de tecnologia com palavras semelhantes', () => {
+  for (const item of [
+    product('Caixa de som JBL', { description: 'controle de volume inteligente' }),
+    product('Roteador Mesh TP-Link', { description: 'cobertura completa da casa' }),
+    product('Console de videogame', { description: 'volume de vendas recorde' }),
+    product('Kit gamer com headset e mouse')
+  ]) {
+    assert.equal(isExcludedProduct(item), false, item.name);
+  }
+});
+
 test('filtro configurável aceita categorias e palavras-chave extras', () => {
   const result = analyzeExclusion(product('Chaveiro personalizado'), {
     extraCategories: ['Papelaria'],

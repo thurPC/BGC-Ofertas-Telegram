@@ -332,6 +332,15 @@ function findProductNode(nodes) {
   }) || null;
 }
 
+// Detecta metadados de livro publicados como JSON-LD do tipo Book/PublicationEvent
+// (Amazon costuma expor "Book" com bookFormat, genre e author).
+function findBookNode(nodes) {
+  return nodes.find((node) => {
+    const type = node?.['@type'];
+    return Array.isArray(type) ? type.includes('Book') : type === 'Book';
+  }) || null;
+}
+
 export function stripTags(html) {
   return decodeEntities(
     String(html ?? '')
@@ -489,6 +498,15 @@ export function extractFromHtml(html, baseUrl, platform = {}) {
     || null;
 
   const coupon = findCoupon(text);
+  const book = findBookNode(flattenNodes(collectJsonLd(html)));
+
+  const description = firstNonNull(meta['og:description'], book?.description);
+  const category = firstNonNull(
+    meta['product:category'],
+    meta['og:category'],
+    book ? 'Livros' : null,
+    meta['product:condition'] && /livro|book/i.test(meta['product:condition']) ? 'Livros' : null
+  );
 
   return {
     name: name ? String(name).trim().slice(0, 180) : null,
@@ -497,7 +515,10 @@ export function extractFromHtml(html, baseUrl, platform = {}) {
     imageUrl,
     store: store ? String(store).trim().slice(0, 80) : null,
     coupon: coupon || null,
-    asin: extractAsin(baseUrl)
+    asin: extractAsin(baseUrl),
+    category: category ? String(category).trim().slice(0, 120) : null,
+    description: description ? String(description).trim().slice(0, 600) : null,
+    isBook: Boolean(book)
   };
 }
 
