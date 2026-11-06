@@ -79,8 +79,8 @@ test('descarta itens sem offerLink de afiliado, preço ou nome', async () => {
       })
   });
   const result = await source.fetch();
-  assert.equal(result.offers.length, 1);
-  assert.equal(result.offers[0].name, 'Mouse gamer');
+  assert.equal(result.ok, true, 'a consulta funcionou, embora nenhum produto seja elegível');
+  assert.equal(result.offers.length, 0, 'todos os três produtos devem ser descartados');
 });
 
 test('propaga mensagem GraphQL e interrompe após erro de autenticação', async () => {
