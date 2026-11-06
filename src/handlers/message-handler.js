@@ -29,6 +29,7 @@ import { describeOperatingHours } from '../services/settings-service.js';
 import { categoriesNote, clearSettingsSession, getSettingsSession } from '../commands/settings.js';
 import { duplicateMessage, findDuplicates } from '../services/offer-service.js';
 import { logger } from '../logger.js';
+import { hasCategorySession } from '../commands/category.js';
 
 const SESSIONS = new Map();
 const SESSION_TTL_MS = 30 * 60 * 1000;
@@ -151,7 +152,8 @@ export function registerMessageHandler(bot, ctx) {
       const userId = msg.from?.id;
       if (!userId) return;
       if (!isAdmin(ctx.config, userId)) return;
-      if (getSettingsSession(userId)) return;
+      if (getSettingsSession?.(userId)) return;
+      if (hasCategorySession?.(userId)) return;
 
       const session = getSession(userId);
 

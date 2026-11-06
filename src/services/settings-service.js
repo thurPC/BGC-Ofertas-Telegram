@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { normalizeText } from './exclusion-filter.js';
 import { escapeHtml } from './validation-service.js';
+import { mergeCategorySettings } from './category-service.js';
 
 export const DEFAULT_OPERATING_HOURS = {
   mode: 'always',
@@ -80,22 +81,39 @@ export function normalizeOperatingHours(value, fallbackHours = []) {
   return { ...DEFAULT_OPERATING_HOURS };
 }
 
+// A mesma chave `settings.categories` guarda dois formatos:
+//   - antigo: array de {id, name, enabled} (painel de categorias extras);
+//   - novo: objeto {enabled, extras, extraKeywords, excludeBooks} (filtro de busca).
+// O objeto é convertido para a lista usada pela API do painel sem descartar
+// itens desativados; o id é estável (derivado do nome) para não mudar a cada leitura.
+export function categoriesFromStore(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object' && Array.isArray(value.extras)) return value.extras;
+  return [];
+}
+
 export function normalizeCategories(list) {
-  if (!Array.isArray(list)) return [];
+  const source = categoriesFromStore(list);
   const seen = new Set();
   const result = [];
-  for (const item of list) {
-    const name = normalizeCategoryName(item?.name ?? item);
+  for (const item of source) {
+    const name = normalizeCategoryName(item?.name ?? item?.keyword ?? item);
     const key = categoryKey(name);
     if (!name || !key || seen.has(key)) continue;
     seen.add(key);
     result.push({
-      id: String(item?.id || createCategoryId()),
+      id: String(item?.id || `cat-${key.replace(/[^a-z0-9]+/g, '-')}`),
       name,
       enabled: item?.enabled !== false
     });
   }
   return result;
+}
+
+// Extrai o estado compartilhado (categorias principais e exclusão de livros) do
+// mesmo registro usado pelo filtro de busca, aceitando array antigo ou objeto novo.
+export function categoryStoreState(value) {
+  return mergeCategorySettings(value);
 }
 
 export function resolveAllowedHours(operatingHours, fallbackHours = []) {
@@ -126,18 +144,39 @@ export class SettingsService {
     };
   }
 
+  // Estado do filtro de busca (categorias principais, extras e exclusão de livros)
+  // no mesmo formato unificado, para o agendador aplicar no boot.
+  async categorySettings() {
+    const db = this.storage ? await this.storage.read() : { settings: {} };
+    return categoryStoreState(db.settings?.categories);
+  }
+
   async #save(patch, { actorId, action } = {}) {
     const current = await this.get();
-    const next = {
-      categories: patch.categories ?? current.categories,
-      operatingHours: patch.operatingHours ?? current.operatingHours
-    };
+    const categories = normalizeCategories(patch.categories ?? current.categories);
+    const operatingHours = patch.operatingHours ?? current.operatingHours;
+    const next = { categories, operatingHours };
     if (!this.storage) return next;
     await this.storage.update((db) => {
+      // A chave `settings.categories` também carrega o filtro de busca. O estado
+      // compartilhado (categorias principais, excludeBooks) é preservado; extras e
+      // extraKeywords são sincronizados com a lista editada pelo painel.
+      const state = categoryStoreState(db.settings?.categories);
+      const store = {
+        enabled: state.enabled,
+        excludeBooks: state.excludeBooks,
+        extras: categories.map((item) => ({
+          id: item.id,
+          keyword: item.name,
+          name: item.name,
+          enabled: item.enabled !== false
+        }))
+      };
+      store.extraKeywords = store.extras.filter((item) => item.enabled).map((item) => item.keyword);
       db.settings = {
         ...db.settings,
-        categories: next.categories,
-        operatingHours: next.operatingHours
+        categories: store,
+        operatingHours
       };
       db.history.push({
         at: new Date().toISOString(),

@@ -11,7 +11,7 @@ export const ADMIN_HELP_TEXT = [
   '/ofertas — lista ofertas cadastradas',
   '/status — estado operacional, sem dados sensíveis',
   '/modelo — edita o modelo de publicação (texto, emojis, ordem, preço, link do canal)',
-  '/categorias — painel de categorias (adicionar, ativar, desativar e remover item)',
+'/categorias — painel de categorias (adicionar, ativar, desativar e remover item)',
   '/horario — horário de operação do bot no formato 24h, sem minutos',
   '/ajuda_admin — esta mensagem',
   '',

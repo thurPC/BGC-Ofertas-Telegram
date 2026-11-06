@@ -154,6 +154,44 @@ test('preserva o link de afiliado exatamente como recebido', async () => {
   assert.equal(result.offer.url, affiliate);
 });
 
+test('gera link curto da Shopee quando o cliente autenticado está disponível', async () => {
+  const original = 'https://shopee.com.br/produto-i.111.222';
+  const html = '<meta property="og:title" content="Produto Shopee"/><meta property="product:price:amount" content="19.90"/>';
+  const result = await extractOfferFromLink(original, {
+    ...fakeOptions(html),
+    shopeeClient: {
+      isConfigured() {
+        return true;
+      },
+      async generateShortLink(url) {
+        assert.equal(url, original);
+        return { ok: true, shortLink: 'https://s.shopee.com.br/abc' };
+      }
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.offer.url, 'https://s.shopee.com.br/abc');
+  assert.equal(result.offer.originalAffiliateUrl, original);
+});
+
+test('mantém o link original da Shopee se a geração afiliada falhar', async () => {
+  const original = 'https://shopee.com.br/produto-i.111.222';
+  const html = '<meta property="og:title" content="Produto Shopee"/><meta property="product:price:amount" content="19.90"/>';
+  const result = await extractOfferFromLink(original, {
+    ...fakeOptions(html),
+    shopeeClient: {
+      isConfigured() {
+        return true;
+      },
+      async generateShortLink() {
+        return { ok: false, reason: 'graphql-error' };
+      }
+    }
+  });
+  assert.equal(result.offer.url, original);
+  assert.ok(result.warnings.includes('graphql-error'));
+});
+
 test('link encurtado de afiliado é aceito e o destino é lido sem alterar o link original', async () => {
   const short = 'https://shope.ee/abc123';
   const seen = [];

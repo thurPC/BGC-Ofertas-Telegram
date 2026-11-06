@@ -82,6 +82,62 @@ test('reconhece o mesmo produto mesmo com parâmetros de afiliado diferentes', (
   assert.ok([...identityKeys(existing[0])].includes('asin:B09LKE939X'));
 });
 
+test('trata o mesmo item Shopee como duplicata mesmo com link, preço ou título novos', () => {
+  const existing = [
+    {
+      id: '1',
+      name: 'Mouse Gamer',
+      store: 'Loja Gamer',
+      url: 'https://s.shopee.com.br/old',
+      externalId: 'shopee:20:10',
+      price: 99.9,
+      status: 'publicada'
+    }
+  ];
+  const dupes = findDuplicates(existing, {
+    name: 'Mouse Gamer RGB',
+    store: 'Outra Loja',
+    url: 'https://s.shopee.com.br/new',
+    externalId: 'shopee:20:10',
+    price: 79.9
+  });
+  assert.equal(dupes.length, 1);
+});
+
+test('oferta expirada não gera duplicata para recadastro, mas seenOffers impede republicação', async () => {
+  const { service } = await tempService();
+  const created = await service.create(
+    sample({
+      name: 'Mouse Gamer',
+      url: 'https://s.shopee.com.br/abc',
+      store: 'Shopee',
+      externalId: 'shopee:20:10'
+    })
+  );
+  assert.equal(created.ok, true);
+  await service.remove(created.offer.id);
+  const keys = await service.seenKeys();
+  assert.equal(keys.has('shopee:20:10'), true, 'histórico de identidade persiste para não republicar');
+
+  const existing = [
+    {
+      id: '1',
+      name: 'Mouse Gamer',
+      store: 'Shopee',
+      url: 'https://s.shopee.com.br/old',
+      externalId: 'shopee:1:99',
+      status: 'expirada'
+    }
+  ];
+  const dupes = findDuplicates(existing, {
+    name: 'Mouse Gamer novo',
+    store: 'Shopee',
+    url: 'https://s.shopee.com.br/new',
+    externalId: 'shopee:1:99'
+  });
+  assert.equal(dupes.length, 0, 'ofertas inativas podem ser recadastradas');
+});
+
 test('recusa cadastrar de novo a mesma promoção', async () => {
   const { service } = await tempService();
   const first = await service.create(sample());

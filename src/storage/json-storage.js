@@ -7,6 +7,7 @@ const DEFAULT_DB = {
   offers: [],
   history: [],
   coupons: [],
+  seenOffers: [],
   settings: {
     autoPublishEnabled: false,
     template: null,
@@ -15,12 +16,24 @@ const DEFAULT_DB = {
       mode: 'always',
       startHour: 8,
       endHour: 22
-    }
+    },
+    lastAutomationRun: null,
+    schedule: null
   }
 };
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Duas gerações convivem sob a mesma chave `settings.categories`:
+//   - antiga (array): lista de categorias extras {id, name, enabled} (painel de categorias);
+//   - nova (objeto): {enabled, extras, extraKeywords, excludeBooks} (filtro de busca).
+// O storage preserva a forma recebida para não descartar configuração do usuário.
+export function normalizeCategoryStore(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') return value;
+  return [];
 }
 
 export class JsonStorage {
@@ -100,15 +113,18 @@ export class JsonStorage {
       offers: Array.isArray(data.offers) ? data.offers : [],
       history: Array.isArray(data.history) ? data.history : [],
       coupons: Array.isArray(data.coupons) ? data.coupons : [],
+      seenOffers: Array.isArray(data.seenOffers) ? data.seenOffers : [],
       settings: {
         autoPublishEnabled: Boolean(data.settings?.autoPublishEnabled),
         template: data.settings?.template ?? null,
-        categories: Array.isArray(data.settings?.categories) ? data.settings.categories : [],
+        categories: normalizeCategoryStore(data.settings?.categories),
         operatingHours: data.settings?.operatingHours ?? {
           mode: 'always',
           startHour: 8,
           endHour: 22
-        }
+        },
+        lastAutomationRun: data.settings?.lastAutomationRun ?? null,
+        schedule: data.settings?.schedule ?? null
       }
     };
   }
