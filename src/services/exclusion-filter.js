@@ -253,8 +253,15 @@ function isDeviceHardware(text) {
 export function analyzeExclusion(product, options = {}) {
   const extraCategories = options.extraCategories || options.excludedCategories || [];
   const extraKeywords = options.extraKeywords || options.excludedKeywords || [];
-  const categories = [...DEFAULT_EXCLUDED_CATEGORIES, ...extraCategories];
-  const keywords = [...DEFAULT_EXCLUDED_KEYWORDS, ...extraKeywords];
+  // "game"/"games" são termos genéricos demais para exclusão: fazem parte
+  // da categoria legítima "Games e acessórios" e de títulos de jogos de tabuleiro.
+  // Removemos apenas esses termos amplos das listas configuráveis; indicadores
+  // editoriais explícitos (livro, ebook, revista etc.) continuam bloqueando.
+  const isOverbroadGameTerm = (term) => ['game', 'games'].includes(normalizeText(term));
+  const categories = [...DEFAULT_EXCLUDED_CATEGORIES, ...extraCategories]
+    .filter((term) => !isOverbroadGameTerm(term));
+  const keywords = [...DEFAULT_EXCLUDED_KEYWORDS, ...extraKeywords]
+    .filter((term) => !isOverbroadGameTerm(term));
 
   const categoryText = normalizeText(product?.category);
   const titleText = normalizeText(product?.name ?? product?.title);
