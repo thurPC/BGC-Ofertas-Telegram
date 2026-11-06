@@ -175,6 +175,32 @@ test('createExclusionFilter retorna a análise com a configuração fornecida', 
   assert.equal(filter(product('Notebook')).excluded, false);
 });
 
+test('não exclui jogos de tabuleiro mesmo quando configuração contém game/games', () => {
+  const overbroadConfig = {
+    extraCategories: ['Games', 'Board Games'],
+    extraKeywords: ['game', 'games']
+  };
+
+  for (const item of [
+    product('Ark Nova – A Board Game', { category: 'Board Games' }),
+    product('The Mind Card Game', { category: 'Games' }),
+    product('Oink Games Fafnir Strategy Game', { category: 'Board Games' }),
+    product('Jogo de tabuleiro estratégia', { category: 'Jogos' })
+  ]) {
+    assert.equal(isExcludedProduct(item, overbroadConfig), false, item.name);
+  }
+
+  // A proteção não pode liberar publicações só porque mencionam games.
+  assert.equal(
+    isExcludedProduct(product('Livro sobre jogos de tabuleiro', { category: 'Games' }), overbroadConfig),
+    true
+  );
+  assert.equal(
+    isExcludedProduct(product('Revista de games', { category: 'Games' }), overbroadConfig),
+    true
+  );
+});
+
 test('exclusionMessage explica o motivo do bloqueio', () => {
   const message = exclusionMessage(['palavra-chave: livro']);
   assert.match(message, /bloqueado/);
