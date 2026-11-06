@@ -79,7 +79,8 @@ test('descarta itens sem offerLink de afiliado, preço ou nome', async () => {
       })
   });
   const result = await source.fetch();
-  assert.equal(result.offers.length, 0);
+  assert.equal(result.ok, true, 'a consulta funcionou, embora nenhum produto seja elegível');
+  assert.equal(result.offers.length, 0, 'todos os três produtos devem ser descartados');
 });
 
 test('propaga mensagem GraphQL e interrompe após erro de autenticação', async () => {
@@ -98,7 +99,7 @@ test('propaga mensagem GraphQL e interrompe após erro de autenticação', async
     }
   });
   const result = await source.fetch();
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
   assert.equal(result.offers.length, 0);
   assert.equal(result.errors[0].reason, 'auth-error');
   assert.match(result.errors[0].error, /Invalid Authorization Header/);
@@ -121,7 +122,7 @@ test('interrompe a busca após erro de sistema (10000)', async () => {
     }
   });
   const result = await source.fetch();
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
   assert.equal(result.offers.length, 0);
   assert.equal(result.errors[0].reason, 'system-error');
   assert.equal(result.errors[0].code, 10000);
@@ -227,4 +228,55 @@ test('createConfiguredSources inclui Shopee somente com credenciais', () => {
   assert.equal(sources.length, 1);
   assert.equal(sources[0].name, 'shopee-open-api');
   assert.equal(sources[0].isConfigured(), true);
+});
+
+
+test('retorna falha quando todas as palavras-chave falham, mesmo sem erro crítico', async () => {
+  const source = new ShopeeOfferSource({
+    client: {
+      isConfigured: () => true,
+      async searchProducts() {
+        return { ok: false, reason: 'graphql-error', error: 'Business error', code: 11000 };
+      }
+    },
+    keywords: ['games', 'tecnologia'],
+    keywordDelayMs: 0
+  });
+  const result = await source.fetch();
+  assert.equal(result.ok, false);
+  assert.equal(result.offers.length, 0);
+  assert.equal(result.errors.length, 2);
+  assert.equal(result.reason, 'graphql-error');
+});
+
+test('mantém sucesso parcial quando uma palavra-chave funciona e outra falha sem erro crítico', async () => {
+  let calls = 0;
+  const source = new ShopeeOfferSource({
+    client: {
+      isConfigured: () => true,
+      async searchProducts() {
+        calls += 1;
+        if (calls === 1) return {
+          ok: true,
+          products: [{
+            name: 'Mouse gamer',
+            price: 10,
+            previousPrice: 20,
+            url: 'https://s.shopee.com.br/mouse',
+            store: 'Shopee'
+          }],
+          pageInfo: { hasNextPage: false }
+        };
+        return { ok: false, reason: 'graphql-error', error: 'Business error', code: 11000 };
+      }
+    },
+    keywords: ['games', 'tecnologia'],
+    keywordDelayMs: 0
+  });
+  const result = await source.fetch();
+  assert.equal(result.ok, true);
+  assert.equal(result.partial, true);
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.offers.length, 1);
+  assert.equal(result.offers[0].name, 'Mouse gamer');
 });
