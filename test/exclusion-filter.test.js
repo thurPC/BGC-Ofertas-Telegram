@@ -185,6 +185,8 @@ test('não exclui jogos de tabuleiro mesmo quando configuração contém game/ga
     product('Ark Nova – A Board Game', { category: 'Board Games' }),
     product('The Mind Card Game', { category: 'Games' }),
     product('Oink Games Fafnir Strategy Game', { category: 'Board Games' }),
+    product('Catan', { category: 'Board Game' }),
+    product('Ticket to Ride', { category: 'Jogos de tabuleiro' }),
     product('Jogo de tabuleiro estratégia', { category: 'Jogos' })
   ]) {
     assert.equal(isExcludedProduct(item, overbroadConfig), false, item.name);
