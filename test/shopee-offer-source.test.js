@@ -277,5 +277,6 @@ test('mantém sucesso parcial quando uma palavra-chave funciona e outra falha se
   assert.equal(result.ok, true);
   assert.equal(result.partial, true);
   assert.equal(result.errors.length, 1);
-  assert.equal(result.offers.length, 0);
+  assert.equal(result.offers.length, 1);
+  assert.equal(result.offers[0].name, 'Mouse gamer');
 });
