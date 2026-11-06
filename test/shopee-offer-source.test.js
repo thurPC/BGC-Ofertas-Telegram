@@ -98,7 +98,7 @@ test('propaga mensagem GraphQL e interrompe após erro de autenticação', async
     }
   });
   const result = await source.fetch();
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
   assert.equal(result.offers.length, 0);
   assert.equal(result.errors[0].reason, 'auth-error');
   assert.match(result.errors[0].error, /Invalid Authorization Header/);
@@ -121,7 +121,7 @@ test('interrompe a busca após erro de sistema (10000)', async () => {
     }
   });
   const result = await source.fetch();
-  assert.equal(result.ok, true);
+  assert.equal(result.ok, false);
   assert.equal(result.offers.length, 0);
   assert.equal(result.errors[0].reason, 'system-error');
   assert.equal(result.errors[0].code, 10000);
