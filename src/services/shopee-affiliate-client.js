@@ -205,13 +205,42 @@ export function normalizeShopeeProduct(node = {}, { category = null } = {}) {
   };
 }
 
-export function graphqlErrorInfo(payload) {
+function redactDiagnosticText(value, secrets = []) {
+  let text = asText(value).slice(0, 500);
+  for (const secret of secrets) {
+    if (secret) text = text.split(secret).join('[REDACTED]');
+  }
+  return text
+    .replace(/(Signature=)[a-f0-9]{32,}/gi, '$1[REDACTED]')
+    .replace(/(Credential=)[^,\\s]+/gi, '$1[REDACTED]');
+}
+
+function responseDiagnostics(response, gqlError = null) {
+  const headers = response?.headers;
+  const requestId =
+    headers?.get?.('x-request-id') ||
+    headers?.get?.('x-correlation-id') ||
+    headers?.get?.('x-shopee-request-id') ||
+    null;
+  return {
+    httpStatus: Number(response?.status) || null,
+    contentType: headers?.get?.('content-type') || null,
+    requestId: requestId ? redactDiagnosticText(requestId) : null,
+    graphqlPath: gqlError?.path ?? null
+  };
+}
+
+export function graphqlErrorInfo(payload, { secrets = [] } = {}) {
   const first = Array.isArray(payload?.errors) ? payload.errors[0] : null;
   if (!first) return null;
   const code = first?.extensions?.code ?? first?.code ?? null;
+  const path = Array.isArray(first?.path)
+    ? first.path.filter((part) => typeof part === 'string' || Number.isInteger(part)).slice(0, 12)
+    : null;
   return {
-    message: asText(first?.message) || 'Erro GraphQL da Shopee.',
-    code: code == null ? null : Number(code) || code
+    message: redactDiagnosticText(first?.message || 'Erro GraphQL da Shopee.', secrets),
+    code: code == null ? null : Number(code) || code,
+    path
   };
 }
 
@@ -295,27 +324,53 @@ export class ShopeeAffiliateClient {
         body
       });
       const raw = await response.text();
+      let payload = null;
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        // Respostas HTTP não-JSON continuam sendo classificadas pelo status.
+      }
+      const gqlError = graphqlErrorInfo(payload, { secrets: [this.appId, this.secret] });
+      const diagnostics = responseDiagnostics(response, gqlError);
       if (response.status === 401 || response.status === 403) {
-        return { ok: false, error: `Shopee API recusou a autenticação (HTTP ${response.status}).`, reason: 'auth-error', status: response.status };
+        return {
+          ok: false,
+          error: gqlError?.message || `Shopee API recusou a autenticação (HTTP ${response.status}).`,
+          code: gqlError?.code ?? null,
+          reason: 'auth-error',
+          status: response.status,
+          diagnostics
+        };
       }
       if (response.status === 429) {
-        return { ok: false, error: 'Shopee API limitou as requisições.', reason: 'rate-limited', status: 429 };
+        return {
+          ok: false,
+          error: gqlError?.message || 'Shopee API limitou as requisições.',
+          code: gqlError?.code ?? null,
+          reason: 'rate-limited',
+          status: 429,
+          diagnostics
+        };
       }
       if (!response.ok) {
         return {
           ok: false,
-          error: `Shopee API respondeu HTTP ${response.status}.`,
+          error: gqlError?.message || `Shopee API respondeu HTTP ${response.status}.`,
+          code: gqlError?.code ?? null,
           reason: 'http-error',
-          status: response.status
+          status: response.status,
+          diagnostics
         };
       }
-      let payload;
-      try {
-        payload = JSON.parse(raw);
-      } catch {
-        return { ok: false, error: 'Resposta inválida da Shopee API.', reason: 'invalid-json', status: response.status };
+      if (payload === null) {
+        return {
+          ok: false,
+          error: 'Resposta inválida da Shopee API.',
+          reason: 'invalid-json',
+          status: response.status,
+          diagnostics
+        };
       }
-      const gqlError = graphqlErrorInfo(payload);
       if (gqlError) {
         const code = Number(gqlError.code);
         const rateLimited = code === SHOPEE_ERROR_CODES.RATE_LIMIT;
@@ -332,11 +387,12 @@ export class ShopeeAffiliateClient {
           error: gqlError.message,
           code: gqlError.code,
           reason,
-          status: rateLimited && response.status === 200 ? 429 : response.status
+          status: rateLimited && response.status === 200 ? 429 : response.status,
+          diagnostics
         };
       }
       if (!payload || typeof payload !== 'object' || payload.data == null) {
-        return { ok: false, error: 'Resposta GraphQL sem data.', reason: 'invalid-graphql', status: response.status };
+        return { ok: false, error: 'Resposta GraphQL sem data.', reason: 'invalid-graphql', status: response.status, diagnostics };
       }
       return { ok: true, data: payload.data, status: response.status };
     } catch (error) {
