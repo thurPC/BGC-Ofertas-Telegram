@@ -78,7 +78,7 @@ export class ShopeeOfferSource extends OfferSource {
         category
       });
       if (!result.ok) {
-        return { ok: false, reason: result.reason, error: result.error, code: result.code, offers };
+        return { ok: false, reason: result.reason, error: result.error, code: result.code, diagnostics: result.diagnostics, offers };
       }
       for (const product of result.products) {
         const mapped = this.#toOffer(product, category);
@@ -147,13 +147,15 @@ export class ShopeeOfferSource extends OfferSource {
           'Falha ao consultar ofertas da Shopee.',
           result.reason || 'erro',
           result.error || '',
-          result.code != null ? `code=${result.code}` : ''
+          result.code != null ? `code=${result.code}` : '',
+          result.diagnostics ? { diagnostics: result.diagnostics } : ''
         );
         errors.push({
           keyword: item.keyword,
           reason: result.reason,
           error: result.error,
-          code: result.code ?? null
+          code: result.code ?? null,
+          diagnostics: result.diagnostics ?? null
         });
         if (result.reason === 'auth-error' || result.reason === 'system-error') break;
         continue;

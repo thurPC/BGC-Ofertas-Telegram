@@ -324,3 +324,61 @@ test('retry com backoff em falha transitória e desiste em erro de autenticaçã
   assert.equal((await auth.searchProducts('x')).reason, 'auth-error');
   assert.equal(authCalls, 1);
 });
+
+test('expõe diagnóstico GraphQL seguro sem vazar credenciais', async () => {
+  const client = new ShopeeAffiliateClient({
+    appId: 'app-id-secreto',
+    secret: 'app-secret-secreto',
+    maxRetries: 0,
+    fetchImpl: async () => ({
+      ...jsonResponse({
+        errors: [{
+          message: 'System error',
+          path: ['productOfferV2', 'nodes'],
+          extensions: { code: 10000 }
+        }]
+      }),
+      headers: {
+        get(name) {
+          return ({
+            'content-type': 'application/json',
+            'x-request-id': 'req-123'
+          })[name] || null;
+        }
+      }
+    })
+  });
+  const result = await client.searchProducts('games');
+  assert.equal(result.reason, 'system-error');
+  assert.equal(result.diagnostics.httpStatus, 200);
+  assert.equal(result.diagnostics.contentType, 'application/json');
+  assert.equal(result.diagnostics.requestId, 'req-123');
+  assert.deepEqual(result.diagnostics.graphqlPath, ['productOfferV2', 'nodes']);
+  assert.equal(JSON.stringify(result.diagnostics).includes('app-secret-secreto'), false);
+  assert.equal(JSON.stringify(result).includes('app-secret-secreto'), false);
+});
+
+test('preserva detalhes GraphQL em resposta HTTP de erro sem registrar o corpo bruto', async () => {
+  const client = new ShopeeAffiliateClient({
+    appId: '123',
+    secret: 'segredo',
+    maxRetries: 0,
+    fetchImpl: async () => ({
+      ...jsonResponse({
+        errors: [{
+          message: 'Access denied',
+          path: ['productOfferV2'],
+          extensions: { code: 10020, secret: 'não deve ser exposto' }
+        }]
+      }, 403),
+      headers: { get: () => 'application/json' }
+    })
+  });
+  const result = await client.searchProducts('games');
+  assert.equal(result.reason, 'auth-error');
+  assert.equal(result.status, 403);
+  assert.equal(result.error, 'Access denied');
+  assert.equal(result.code, 10020);
+  assert.deepEqual(result.diagnostics.graphqlPath, ['productOfferV2']);
+  assert.equal(JSON.stringify(result).includes('não deve ser exposto'), false);
+});
