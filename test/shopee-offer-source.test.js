@@ -79,7 +79,8 @@ test('descarta itens sem offerLink de afiliado, preço ou nome', async () => {
       })
   });
   const result = await source.fetch();
-  assert.equal(result.offers.length, 0);
+  assert.equal(result.offers.length, 1);
+  assert.equal(result.offers[0].name, 'Mouse gamer');
 });
 
 test('propaga mensagem GraphQL e interrompe após erro de autenticação', async () => {
@@ -248,14 +249,24 @@ test('retorna falha quando todas as palavras-chave falham, mesmo sem erro críti
   assert.equal(result.reason, 'graphql-error');
 });
 
-test('mantém sucesso parcial quando há ofertas e falha não crítica em outra palavra-chave', async () => {
+test('mantém sucesso parcial quando uma palavra-chave funciona e outra falha sem erro crítico', async () => {
   let calls = 0;
   const source = new ShopeeOfferSource({
     client: {
       isConfigured: () => true,
       async searchProducts() {
         calls += 1;
-        if (calls === 1) return { ok: true, products: [], pageInfo: { hasNextPage: false } };
+        if (calls === 1) return {
+          ok: true,
+          products: [{
+            name: 'Mouse gamer',
+            price: 10,
+            previousPrice: 20,
+            url: 'https://s.shopee.com.br/mouse',
+            store: 'Shopee'
+          }],
+          pageInfo: { hasNextPage: false }
+        };
         return { ok: false, reason: 'graphql-error', error: 'Business error', code: 11000 };
       }
     },
