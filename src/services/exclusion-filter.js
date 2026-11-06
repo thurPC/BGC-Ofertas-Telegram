@@ -258,8 +258,16 @@ export function analyzeExclusion(product, options = {}) {
   // Removemos apenas esses termos amplos das listas configuráveis; indicadores
   // editoriais explícitos (livro, ebook, revista etc.) continuam bloqueando.
   const isOverbroadGameTerm = (term) => ['game', 'games'].includes(normalizeText(term));
+  // Categorias genéricas de jogos de tabuleiro também não podem ser tratadas
+  // como conteúdo editorial proibido.
+  const isBoardGameCategory = (term) => [
+    'board game',
+    'board games',
+    'jogo de tabuleiro',
+    'jogos de tabuleiro'
+  ].includes(normalizeText(term));
   const categories = [...DEFAULT_EXCLUDED_CATEGORIES, ...extraCategories]
-    .filter((term) => !isOverbroadGameTerm(term));
+    .filter((term) => !isOverbroadGameTerm(term) && !isBoardGameCategory(term));
   const keywords = [...DEFAULT_EXCLUDED_KEYWORDS, ...extraKeywords]
     .filter((term) => !isOverbroadGameTerm(term));
 
