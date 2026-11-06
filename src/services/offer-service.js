@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { extractAsin } from './link-extractor.js';
 import { analyzeExclusion, exclusionMessage, isExcludedProduct } from './exclusion-filter.js';
 import { calculateDiscount, validateOfferInput } from './validation-service.js';
+import { offerIdentityKeys, offersShareIdentity } from './offer-identity.js';
 
 export const OFFER_STATUS = {
   DRAFT: 'rascunho',
@@ -166,6 +167,7 @@ export function findDuplicates(offers, candidate, { excludeId } = {}) {
   return (offers || []).filter((offer) => {
     if (excludeId && offer.id === excludeId) return false;
     if (INACTIVE.has(offer.status)) return false;
+    if (offersShareIdentity(offer, candidate)) return true;
     const keys = identityKeys(offer);
     for (const key of targetKeys) {
       if (keys.has(key)) return true;
@@ -247,23 +249,30 @@ export class OfferService {
 
     const candidate = {
       ...validation.offer,
+      category: preserveOptionalText(input.category),
+      description: preserveOptionalText(input.description),
       url: input.url || validation.offer.url,
+      imageUrl: input.imageUrl || validation.offer.imageUrl || null,
       resolvedProductUrl: input.resolvedProductUrl || null,
       originalAffiliateUrl: input.originalAffiliateUrl || input.url || validation.offer.url,
       asin: input.asin || null,
-      externalId: input.externalId ?? null
+      externalId: input.externalId ?? null,
+      productLink: input.productLink ?? null,
+      itemId: input.itemId ?? null,
+      shopId: input.shopId ?? null
     };
     const offer = {
       id: createOfferId(),
       ...validation.offer,
-      category: preserveOptionalText(input.category),
-      description: preserveOptionalText(input.description),
       url: candidate.url,
-      imageUrl: input.imageUrl || validation.offer.imageUrl || null,
+      imageUrl: candidate.imageUrl,
+      externalId: candidate.externalId,
+      productLink: candidate.productLink,
+      itemId: candidate.itemId,
+      shopId: candidate.shopId,
       resolvedProductUrl: candidate.resolvedProductUrl,
       originalAffiliateUrl: candidate.originalAffiliateUrl || null,
       asin: candidate.asin,
-      externalId: candidate.externalId,
       status: OFFER_STATUS.READY,
       createdAt: nowIso(),
       updatedAt: nowIso(),
@@ -307,6 +316,9 @@ export class OfferService {
         return current;
       }
       current.offers.push(offer);
+      const seen = new Set(Array.isArray(current.seenOffers) ? current.seenOffers : []);
+      for (const key of offerIdentityKeys(offer)) seen.add(key);
+      current.seenOffers = [...seen].slice(-5000);
       current.history.push({
         at: nowIso(),
         action: 'create',
@@ -473,5 +485,52 @@ export class OfferService {
       expirada: count(OFFER_STATUS.EXPIRED),
       cancelada: count(OFFER_STATUS.CANCELLED)
     };
+  }
+
+  async seenKeys() {
+    const db = await this.storage.read();
+    const keys = new Set();
+    for (const key of db.seenOffers || []) {
+      for (const item of offerIdentityKeys({ externalId: key, url: key, productLink: key })) {
+        keys.add(item);
+      }
+      if (key) keys.add(String(key));
+    }
+    for (const offer of db.offers || []) {
+      if (offer.status === OFFER_STATUS.CANCELLED) continue;
+      for (const key of offerIdentityKeys(offer)) keys.add(key);
+    }
+    return keys;
+  }
+
+  async recordAutomationRun(summary = {}) {
+    const seenKeys = Array.isArray(summary.seenKeys) ? summary.seenKeys.map((item) => String(item)).filter(Boolean) : [];
+    const record = {
+      at: nowIso(),
+      fetched: summary.fetched ?? 0,
+      imported: summary.imported ?? 0,
+      published: summary.published ?? 0,
+      selected: summary.selected ?? 0,
+      duplicates: summary.duplicates ?? 0,
+      rejected: summary.rejected ?? 0,
+      excludedBooks: summary.excludedBooks ?? 0,
+      note: summary.note ?? null
+    };
+    await this.storage.update((db) => {
+      const seen = new Set(Array.isArray(db.seenOffers) ? db.seenOffers : []);
+      for (const key of seenKeys) seen.add(key);
+      db.seenOffers = [...seen].slice(-5000);
+      db.settings = { ...db.settings, lastAutomationRun: record };
+      db.history.push({
+        at: record.at,
+        action: 'automation-run',
+        actorId: 'scheduler',
+        fetched: record.fetched,
+        imported: record.imported,
+        published: record.published
+      });
+      return db;
+    });
+    return record;
   }
 }

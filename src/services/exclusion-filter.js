@@ -90,6 +90,8 @@ export const DEFAULT_EXCLUDED_KEYWORDS = [
   'dicionario',
   'revista',
   'magazine',
+  'manga',
+  'mangas',
   'gibi',
   'quadrinho',
   'quadrinhos',
@@ -200,20 +202,18 @@ const PUBLISHERS = [
   'editora intrínseca'
 ];
 
-const MANGA_CONTEXT = [
-  'vol',
-  'volume',
-  'edicao',
-  'tankobon',
-  'japones',
-  'shonen',
-  'seinen',
-  'colecao',
-  'capitulo',
-  'issue',
-  'numbers',
-  'quadrinho',
-  'gibi'
+// "manga" também é parte de roupas (camiseta manga longa). Só excluímos quando
+// o termo NÃO vem acompanhado de descritor de vestuário.
+const MANGA_CLOTHING = [
+  'manga longa',
+  'manga curta',
+  'manga comprida',
+  'manga 3/4',
+  'manga tres quartos',
+  'camiseta manga',
+  'camisa manga',
+  'blusa manga',
+  'regata manga'
 ];
 
 export function normalizeText(value) {
@@ -237,16 +237,8 @@ export function hasWord(text, word) {
   return new RegExp(pattern).test(source);
 }
 
-function hasContextWord(text, word) {
-  return new RegExp(`(^|[^a-z0-9-])${escapeRegExp(word)}([^a-z0-9-]|$)`).test(text);
-}
-
 function categoryMatches(categoryText, term) {
   return categoryText.includes(normalizeText(term));
-}
-
-function isMangaContextual(text) {
-  return MANGA_CONTEXT.some((term) => hasContextWord(text, term));
 }
 
 function isDeviceHardware(text) {
@@ -292,7 +284,8 @@ export function analyzeExclusion(product, options = {}) {
     }
   }
 
-  if (hasWord(text, 'manga') && isMangaContextual(text)) {
+  const clothingHit = MANGA_CLOTHING.some((term) => text.includes(normalizeText(term)));
+  if (hasWord(text, 'manga') && !clothingHit) {
     reasons.push('palavra-chave: manga');
   }
 

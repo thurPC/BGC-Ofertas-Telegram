@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import dotenv from 'dotenv';
 import { assertRuntimeConfig, loadConfig, PROJECT_ROOT } from './src/config.js';
-import { createBot, stopBot } from './src/bot.js';
+import { createBot, startBotPolling, stopBot } from './src/bot.js';
 import { logger } from './src/logger.js';
 import { registerPublicCommands } from './src/commands/public.js';
 import { registerMessageHandler } from './src/handlers/message-handler.js';
@@ -20,6 +20,8 @@ import { CouponService } from './src/services/coupon-service.js';
 import { JsonStorage } from './src/storage/json-storage.js';
 import { createConfiguredSources } from './src/sources/json-feed-source.js';
 import { InstanceLock } from './src/process-lock.js';
+import { createShopeeAffiliateClient } from './src/services/shopee-affiliate-client.js';
+import { evaluateReadiness } from './src/services/readiness-service.js';
 
 dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
 
@@ -91,9 +93,10 @@ async function main() {
   const couponService = new CouponService(storage);
   const offerService = new OfferService(storage, { settingsService, couponService });
   const templateService = new TemplateService(storage);
-  bot = createBot(config.token, { polling: true });
+  bot = createBot(config.token);
   const publishingService = new PublishingService({ bot, config, offerService, templateService });
-  const sources = createConfiguredSources(config);
+  const shopeeClient = createShopeeAffiliateClient(config);
+  const sources = createConfiguredSources(config, { shopeeClient });
   scheduler = new SchedulerService({
     config,
     sources,
@@ -103,7 +106,8 @@ async function main() {
     couponService
   });
 
-  const ctx = { config, offerService, publishingService, scheduler, templateService, settingsService, couponService };
+  const linkOptions = { shopeeClient };
+  const ctx = { config, offerService, publishingService, scheduler, templateService, settingsService, couponService, linkOptions };
 
   registerPublicCommands(bot);
   registerMessageHandler(bot, ctx);
@@ -115,6 +119,18 @@ async function main() {
 
   await registerBotMenuCommands(bot, config);
 
+  if (scheduler.applyCategorySettings) {
+    const categorySettings = await settingsService.categorySettings?.() ?? settingsService.all?.() ?? {};
+    scheduler.applyCategorySettings?.(categorySettings);
+  }
+  if (scheduler.applyScheduleSettings) {
+    const scheduleSettings = await settingsService.scheduleSettings?.() ?? {};
+    scheduler.applyScheduleSettings?.(scheduleSettings);
+  }
+
+  registerShutdownHandlers();
+  await startBotPolling(bot);
+
   scheduler.start();
   logger.info('BGC Ofertas iniciado em long polling.');
   if (!scheduler.hasConfiguredSource()) {
@@ -123,8 +139,10 @@ async function main() {
   if (!config.autoPublish) {
     logger.info('Publicação automática desativada (OFFER_AUTO_PUBLISH=false).');
   }
-
-  registerShutdownHandlers();
+  const readiness = evaluateReadiness(config);
+  if (!readiness.ok) {
+    logger.warn(`Verificação de prontidão: ${readiness.blockers.join(' ')}`);
+  }
 }
 
 main().catch((error) => {

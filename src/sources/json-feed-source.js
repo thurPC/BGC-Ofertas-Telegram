@@ -7,6 +7,7 @@ import {
 } from '../services/exclusion-filter.js';
 import { couponFromOfferFields, extractFeedCoupons, normalizeCoupon } from '../services/coupon-service.js';
 import { calculateDiscount, validateOfferInput } from '../services/validation-service.js';
+import { ShopeeOfferSource } from './shopee-offer-source.js';
 
 const DEFAULT_TIMEOUT_MS = 12000;
 
@@ -79,6 +80,7 @@ export function parseFeedPayload(payload, sourceName = 'json-feed') {
       imageUrl: normalized.imageUrl || validation.offer.imageUrl,
       externalId: normalized.externalId,
       marketplace: normalized.marketplace,
+      description: normalized.description,
       source: sourceName,
       fetchedAt: normalized.fetchedAt,
       discountPercent: calculateDiscount(validation.offer.previousPrice, validation.offer.price)
@@ -233,5 +235,21 @@ export class JsonFeedSource extends OfferSource {
 export function createConfiguredSources(config, options = {}) {
   const sources = [];
   if (config.feedUrl) sources.push(new JsonFeedSource(config.feedUrl, options));
+  if (config.shopeeAppId && config.shopeeAppSecret) {
+    sources.push(
+      new ShopeeOfferSource({
+        appId: config.shopeeAppId,
+        secret: config.shopeeAppSecret,
+        endpoint: config.shopeeApiUrl,
+        fetchImpl: options.fetchImpl,
+        client: options.shopeeClient,
+        keywords: config.shopeeKeywords,
+        limit: options.shopeeLimit,
+        maxPages: options.shopeeMaxPages,
+        pageDelayMs: options.shopeePageDelayMs,
+        clockSkewSeconds: config.shopeeClockSkewSeconds
+      })
+    );
+  }
   return sources;
 }

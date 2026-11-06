@@ -32,7 +32,7 @@ export function normalizeFetchedOffer(raw, sourceName) {
   return {
     name: preserveText(raw?.name),
     category: preserveText(raw?.category),
-    description: preserveText(raw?.description),
+    description: preserveText(raw?.description ?? raw?.productDescription ?? raw?.desc),
     price: raw?.price ?? null,
     previousPrice: raw?.previousPrice ?? null,
     pixPrice: raw?.pixPrice ?? null,
