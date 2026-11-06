@@ -280,3 +280,32 @@ test('mantém sucesso parcial quando uma palavra-chave funciona e outra falha se
   assert.equal(result.offers.length, 1);
   assert.equal(result.offers[0].name, 'Mouse gamer');
 });
+
+test('propaga metadados de diagnóstico para os logs e resultado da fonte', async () => {
+  const source = new ShopeeOfferSource({
+    client: {
+      isConfigured: () => true,
+      async searchProducts() {
+        return {
+          ok: false,
+          reason: 'system-error',
+          error: 'System error',
+          code: 10000,
+          diagnostics: {
+            httpStatus: 200,
+            contentType: 'application/json',
+            requestId: 'req-safe-1',
+            graphqlPath: ['productOfferV2']
+          }
+        };
+      }
+    },
+    keywords: ['games'],
+    keywordDelayMs: 0
+  });
+  const result = await source.fetch();
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].diagnostics.httpStatus, 200);
+  assert.equal(result.errors[0].diagnostics.requestId, 'req-safe-1');
+  assert.deepEqual(result.errors[0].diagnostics.graphqlPath, ['productOfferV2']);
+});
