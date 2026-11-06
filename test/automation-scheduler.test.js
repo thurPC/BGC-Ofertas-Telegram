@@ -369,7 +369,15 @@ test('falha de autenticação na Shopee bloqueia a execução sem publicar nada'
   };
   const scheduler = new SchedulerService({
     config: config({ autoPublish: true, maxOffersPerRun: 5, publishGapSeconds: 0 }),
-    sources: [failingSource],
+    sources: [
+      failingSource,
+      source([sampleOffer({
+        name: 'Oferta de feed válida',
+        source: 'json-feed',
+        externalId: 'feed:valid',
+        url: 'https://example.com/oferta'
+      })], 'json-feed')
+    ],
     offerService: service,
     publishingService: {
       async publish() {
@@ -380,12 +388,13 @@ test('falha de autenticação na Shopee bloqueia a execução sem publicar nada'
     sleepFn: async () => undefined
   });
   const result = await scheduler.run();
-  assert.equal(result.ok, true);
-  assert.equal(result.fetched, 0);
-  assert.equal(result.selected, 0);
-  assert.equal(publishCalls, 0, 'nada deve ser publicado quando a fonte falha');
+  assert.equal(result.ok, false, 'o ciclo deve ser marcado como bloqueado');
+  assert.equal(result.fetched, 1, 'a fonte saudável foi consultada, mas seu lote também deve ser retido');
+  assert.ok(result.selected >= 1, 'a oferta saudável foi selecionada, mas não pode ser importada');
+  assert.equal(publishCalls, 0, 'nada deve ser publicado quando uma fonte configurada falha');
   assert.equal(result.imported, 0);
   assert.ok(result.errors.length >= 1);
+  assert.match(result.note, /bloqueada/i);
   const stored = await service.list();
   assert.equal(stored.length, 0, 'nada deve ser importado quando a fonte falha');
 });
