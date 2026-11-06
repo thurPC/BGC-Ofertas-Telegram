@@ -245,6 +245,21 @@ export class SchedulerService {
       };
     }
 
+    const incomingSourceErrors = sourceErrors || [];
+    if (publish && incomingSourceErrors.length > 0) {
+      return {
+        ok: false,
+        fetched: Array.isArray(collected) ? collected.length : 0,
+        imported: 0,
+        published: 0,
+        duplicates: 0,
+        excludedBooks: 0,
+        selected: selection?.selected?.length || 0,
+        errors: incomingSourceErrors,
+        note: 'Publicação automática bloqueada: uma ou mais fontes configuradas falharam. Nenhuma oferta foi importada ou publicada neste ciclo.'
+      };
+    }
+
     const current = existing || await this.offerService.list();
     const publishedKeys =
       typeof this.offerService.seenKeys === 'function'
