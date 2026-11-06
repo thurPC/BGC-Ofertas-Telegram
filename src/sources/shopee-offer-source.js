@@ -175,12 +175,19 @@ export class ShopeeOfferSource extends OfferSource {
       unique.set(key, offer);
     }
 
+    const criticalError = errors.find((item) =>
+      item.reason === 'auth-error' || item.reason === 'system-error'
+    );
+    const allKeywordsFailed = errors.length > 0 && errors.length === this.keywords.length;
+    const failed = Boolean(criticalError || allKeywordsFailed);
+
     return {
-      ok: true,
-      offers: [...unique.values()],
+      ok: !failed,
+      offers: failed ? [] : [...unique.values()],
       errors,
+      partial: errors.length > 0 && !failed,
       skipped: 0,
-      reason: errors.length && unique.size === 0 ? errors[0].reason : null
+      reason: criticalError?.reason || (allKeywordsFailed ? errors[0]?.reason || 'source-error' : null)
     };
   }
 
