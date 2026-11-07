@@ -8,7 +8,7 @@ import { identityMatchesPublished, offerIdentityKeys } from './offer-identity.js
 import { validateOfferInput } from './validation-service.js';
 import { detectCategory, rankOffers } from './offer-scorer.js';
 import { evaluateReadiness } from './readiness-service.js';
-import { enabledCategories, mergeCategorySettings } from './category-service.js';
+import { enabledCategories, mergeCategorySettings, offerMatchesCategories } from './category-service.js';
 import { hoursFromSchedule, mergeScheduleSettings } from './schedule-service.js';
 import { formatOfferHtml } from '../formatters/offer-message.js';
 
@@ -47,6 +47,7 @@ export class SchedulerService {
     const resolved = mergeCategorySettings(settings);
     this.config.excludeBooks = resolved.excludeBooks !== false;
     this.config.enabledCategories = resolved.enabled;
+    this.config.categorySettings = resolved;
     const categories = enabledCategories(resolved);
     const allowed = new Set(resolved.enabled);
     const envKeywords = (this.config.shopeeKeywords || []).filter((keyword) => {
@@ -176,12 +177,10 @@ export class SchedulerService {
     let duplicates = 0;
     const knownKeys = publishedKeys instanceof Set ? new Set(publishedKeys) : duplicateKeys(existing);
     const enabled = Array.isArray(this.config.enabledCategories) ? this.config.enabledCategories : [];
+    const categorySettings = this.config.categorySettings || (enabled.length ? { enabled } : null);
     for (const item of filtered) {
       if (isExcludedProduct(item, this.config)) continue;
-      if (enabled.length) {
-        const category = item.category || detectCategory(item);
-        if (category && !enabled.includes(category)) continue;
-      }
+      if (categorySettings && !offerMatchesCategories(item, categorySettings)) continue;
       const validation = validateOfferInput(item);
       if (!validation.ok) continue;
       const candidate = {
@@ -231,7 +230,7 @@ export class SchedulerService {
     };
   }
 
-  async importFromSources({ publish = false, collected, sourceErrors, existing, selection } = {}) {
+  async importFromSources({ publish = false, collected, sourceErrors, existing, selection, coupons } = {}) {
     if (!this.hasConfiguredSource()) {
       return {
         ok: true,
@@ -266,7 +265,7 @@ export class SchedulerService {
         ? await this.offerService.seenKeys()
         : duplicateKeys(current);
     const batch = collected
-      ? { collected, sourceErrors: sourceErrors || [], coupons: null }
+      ? { collected, sourceErrors: sourceErrors || [], coupons: coupons || [] }
       : await this.collectFromSources();
     const runtimeConfig = this.settingsService
       ? await this.settingsService.runtimeConfig()
@@ -382,6 +381,9 @@ export class SchedulerService {
     }
     try {
       if (typeof this.onTick === 'function') this.onTick();
+      if (this.settingsService?.categorySettings) {
+        this.applyCategorySettings(await this.settingsService.categorySettings());
+      }
       if (!this.hasConfiguredSource()) {
         return {
           ok: true,
@@ -469,7 +471,8 @@ export class SchedulerService {
         collected,
         sourceErrors,
         existing,
-        selection
+        selection,
+        coupons
       });
     } finally {
       await this.#releaseRunLock();
