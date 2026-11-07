@@ -24,15 +24,15 @@ function scoreEntry(entry, offer, haystack) {
       break;
     }
   }
-  for (const term of entry.terms || []) {
-    if (includesPhrase(haystack, term) || haystack.includes(normalizeText(term))) {
-      score += 18;
-      evidence.push(`term:${term}`);
-    }
-  }
   if (offer?.taxonomyId === entry.id) {
     score += 50;
     evidence.push('explicit');
+  }
+  for (const term of entry.terms || []) {
+    if (includesPhrase(haystack, term) || haystack.includes(normalizeText(term))) {
+      score += 8;
+      evidence.push(`term:${term}`);
+    }
   }
   return { score, evidence };
 }
@@ -78,7 +78,28 @@ export function classifyProduct(offer = {}, identity = null) {
   }
 
   const legacy = detectCategory(offer);
-  if ((!best || best.score < 18) && legacy) {
+  const hasIdentity = Boolean(identity?.gtin || identity?.mpn || (identity?.brand && identity?.model));
+  const evidence = best?.evidence || [];
+  const hasStoreOrExplicit = evidence.some((item) => item === 'store-category' || item === 'explicit');
+  const hasTerms = evidence.some((item) => String(item).startsWith('term:'));
+  const structured = hasStoreOrExplicit || (hasTerms && hasIdentity);
+  const titleOnly = hasTerms && !hasStoreOrExplicit && !hasIdentity;
+
+  if (titleOnly && !structured) {
+    return {
+      taxonomyId: null,
+      family: PRODUCT_FAMILIES.UNKNOWN,
+      label: 'Desconhecido',
+      confidence: 25,
+      reason: 'title-only',
+      unknown: true,
+      eligible: false,
+      legacyIds: legacy ? [legacy] : [],
+      evidence: best.evidence
+    };
+  }
+
+  if ((!best || best.score < 18 || !structured) && legacy && (hasIdentity || hasStoreOrExplicit)) {
     const mapped = LEGACY_CATEGORY_MAP[legacy]?.[0];
     const entry = taxonomyById(mapped);
     if (entry) {
@@ -96,7 +117,7 @@ export function classifyProduct(offer = {}, identity = null) {
     }
   }
 
-  if (!best || best.score < 18) {
+  if (!best || best.score < 18 || !structured) {
     return {
       taxonomyId: null,
       family: PRODUCT_FAMILIES.UNKNOWN,

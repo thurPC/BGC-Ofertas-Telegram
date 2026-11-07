@@ -6,7 +6,8 @@ const EMPTY = {
   version: 1,
   snapshots: {},
   publications: [],
-  cycleReports: []
+  cycleReports: [],
+  queue: []
 };
 
 function wait(ms) {
@@ -73,7 +74,8 @@ export class PriceHistoryStore {
       version: 1,
       snapshots: data.snapshots && typeof data.snapshots === 'object' ? data.snapshots : {},
       publications: Array.isArray(data.publications) ? data.publications : [],
-      cycleReports: Array.isArray(data.cycleReports) ? data.cycleReports : []
+      cycleReports: Array.isArray(data.cycleReports) ? data.cycleReports : [],
+      queue: Array.isArray(data.queue) ? data.queue : []
     };
   }
 
@@ -190,5 +192,40 @@ export class PriceHistoryStore {
   async latestCycleReport() {
     const db = await this.read();
     return db.cycleReports?.at(-1) || null;
+  }
+
+  async replaceQueue(items = []) {
+    await this.update((db) => {
+      db.queue = Array.isArray(items) ? items.slice(-500) : [];
+      return db;
+    });
+  }
+
+  async enqueue(items = []) {
+    await this.update((db) => {
+      const next = Array.isArray(db.queue) ? db.queue : [];
+      next.push(...(items || []));
+      db.queue = next.slice(-500);
+      return db;
+    });
+  }
+
+  async queueItems() {
+    const db = await this.read();
+    return db.queue || [];
+  }
+
+  async updateQueueItem(identityKey, patch = {}) {
+    if (!identityKey) return null;
+    let updated = null;
+    await this.update((db) => {
+      db.queue = (db.queue || []).map((item) => {
+        if (item.identityKey !== identityKey) return item;
+        updated = { ...item, ...patch, validatedAt: patch.validatedAt || new Date().toISOString() };
+        return updated;
+      });
+      return db;
+    });
+    return updated;
   }
 }

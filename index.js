@@ -109,7 +109,9 @@ async function main() {
     offerService,
     templateService,
     couponService,
-    settingsService
+    settingsService,
+    priceStore,
+    dealEngine: config.dealEngine
   });
   const shopeeClient = createShopeeAffiliateClient(config);
   const sources = createConfiguredSources(config, { shopeeClient });

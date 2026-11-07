@@ -1,7 +1,7 @@
 import { mergeDealEngineConfig } from './defaults.js';
-import { isAffiliateTrackingUrl } from '../services/offer-scorer.js';
 import { validateHttpUrl } from '../services/validation-service.js';
 import { asPositiveNumber } from './text.js';
+import { validateAffiliateLink } from './affiliate.js';
 
 export const GATE_REASONS = {
   UNIDENTIFIED: 'unidentified-product',
@@ -96,9 +96,9 @@ export function evaluateQualityGate(evaluated, options = {}) {
     });
   }
 
-  const requireAffiliate = options.requireAffiliateLink === true || String(offer.source || '').includes('shopee');
-  if (requireAffiliate && !isAffiliateTrackingUrl(offer.url, offer.store)) {
-    failures.push({ code: GATE_REASONS.MISSING_AFFILIATE, message: 'Link de afiliado ausente ou inválido.' });
+  const affiliate = offer.affiliate || validateAffiliateLink(offer, options);
+  if (!affiliate.ok && affiliate.reason === 'missing-affiliate') {
+    failures.push({ code: GATE_REASONS.MISSING_AFFILIATE, message: affiliate.error });
   }
 
   return {

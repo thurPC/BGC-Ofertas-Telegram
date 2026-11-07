@@ -11,6 +11,10 @@ import { mergeDealEngineConfig } from '../src/deal-engine/defaults.js';
 import { formatDiagnosticsReport } from '../src/deal-engine/diagnostics.js';
 import { identifyProduct, normalizeGtin, sameProductIdentity, variantsCompatible } from '../src/deal-engine/identity.js';
 import { dryRunOffer, evaluateOffer, runDealEngine } from '../src/deal-engine/pipeline.js';
+import { semanticCannotOverride } from '../src/deal-engine/semantic.js';
+import { validateAffiliateLink } from '../src/deal-engine/affiliate.js';
+import { CyclePriceCache, isFreshSnapshot } from '../src/deal-engine/cache.js';
+import { adaptDiscoveredProduct, unavailableAuthorizedSources } from '../src/deal-engine/discovery.js';
 import {
   detectArtificialOriginal,
   effectivePrice,
@@ -410,4 +414,120 @@ test('monitor Full HD não equivale a Quad HD', () => {
   assert.equal(fhd.variant.resolution, 'full hd');
   assert.equal(qhd.variant.resolution, 'quad hd');
   assert.equal(variantsCompatible(fhd, qhd), false);
+});
+
+test('semântica auxiliar não substitui variantes incompatíveis', () => {
+  const leftOffer = gpu({ name: 'Placa de Vídeo Gigabyte GeForce RTX 5060 8GB' });
+  const rightOffer = gpu({
+    name: 'Placa de Vídeo Gigabyte GeForce RTX 5060 Ti 8GB',
+    model: 'RTX 5060 Ti',
+    gtin: '7891234567801'
+  });
+  const left = identifyProduct(leftOffer);
+  const right = identifyProduct(rightOffer);
+  const result = semanticCannotOverride(left, right, leftOffer, rightOffer);
+  assert.equal(result.override, false);
+  assert.equal(result.similar, true);
+  assert.equal(result.reason, 'incompatible-variants');
+});
+
+test('título isolado não classifica sozinho sem identidade ou categoria de loja', () => {
+  const onlyTitle = classifyProduct({ name: 'placa de video promocao relampago', url: 'https://loja.example.com/x', price: 10 });
+  assert.equal(onlyTitle.eligible, false);
+  assert.ok(onlyTitle.unknown || onlyTitle.reason === 'title-only');
+});
+
+test('link de afiliado é validado e comissão não entra no Deal Score', () => {
+  const ok = validateAffiliateLink(gpu(), { requireAffiliateLink: true });
+  assert.equal(ok.ok, true);
+  const missing = validateAffiliateLink(
+    { name: 'X', url: 'https://loja.example.com/x', source: 'shopee-open-api' },
+    { requireAffiliateLink: true }
+  );
+  assert.equal(missing.ok, false);
+});
+
+test('fontes oficiais indisponíveis ficam documentadas, sem scraping inventado', () => {
+  const listed = unavailableAuthorizedSources();
+  assert.ok(listed.some((item) => item.name === 'mercadolivre-official-api' && item.available === false));
+  const ml = adaptDiscoveredProduct({ name: 'Geladeira', store: 'Mercado Livre', price: 10, url: 'https://www.mercadolivre.com.br/p/MLB1' });
+  assert.equal(ml.source, 'mercadolivre-feed');
+});
+
+test('cache de ciclo não trata snapshot velho como preço atual', () => {
+  const cache = new CyclePriceCache({ maxAgeMs: 50 });
+  cache.set('k', { median30: 100 }, Date.now());
+  assert.equal(cache.get('k', Date.now() + 80), null);
+  assert.equal(isFreshSnapshot({ fetchedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }), false);
+  assert.equal(isFreshSnapshot({ fetchedAt: new Date().toISOString() }), true);
+});
+
+test('fila persiste após reinício e concorrência serializa gravações', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bgc-queue-'));
+  const file = path.join(dir, 'price-history.json');
+  const store = new PriceHistoryStore(file);
+  await store.init();
+  await Promise.all([
+    store.replaceQueue([{ identityKey: 'a', status: 'queued', dealScore: 80 }]),
+    store.enqueue([{ identityKey: 'b', status: 'queued', dealScore: 70 }])
+  ]);
+  const again = new PriceHistoryStore(file);
+  await again.init();
+  const items = await again.queueItems();
+  assert.ok(items.length >= 1);
+  assert.ok(items.every((item) => item.identityKey));
+});
+
+test('falha de fonte não inventa ofertas no pipeline', async () => {
+  const result = await runDealEngine([], { config: mergeDealEngineConfig(), sourceFailures: 2 });
+  assert.equal(result.evaluated.length, 0);
+  assert.equal(result.approved.length, 0);
+});
+
+test('gateOnPublish bloqueia oferta duvidosa; desligado não altera publicação legado', async () => {
+  const sent = [];
+  const bot = {
+    async sendMessage(chatId, text) {
+      sent.push({ chatId, text });
+      return { message_id: sent.length };
+    }
+  };
+  const blocked = new PublishingService({
+    bot,
+    config: { channelId: '-100', autoPublish: false, dealEngine: { gateOnPublish: true } },
+    dealEngine: { enabled: true, gateOnPublish: true, minDealScore: 75, minConfidence: 90 },
+    offerService: {
+      async list() {
+        return [];
+      }
+    }
+  });
+  const result = await blocked.publish({
+    name: 'Coisa indefinida',
+    price: 20,
+    url: 'https://loja.example.com/x',
+    status: 'pronta',
+    source: 'manual'
+  });
+  assert.equal(result.ok, false);
+  assert.equal(sent.length, 0);
+
+  const open = new PublishingService({
+    bot,
+    config: { channelId: '-100', autoPublish: false },
+    offerService: {
+      async list() {
+        return [];
+      }
+    }
+  });
+  const allowed = await open.publish({
+    name: 'Headset Gamer',
+    price: 129.9,
+    url: 'https://s.shopee.com.br/abc',
+    status: 'pronta',
+    source: 'manual'
+  });
+  assert.equal(allowed.ok, true);
+  assert.equal(sent.length, 1);
 });

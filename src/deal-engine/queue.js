@@ -72,3 +72,19 @@ export function revalidateItem(item, currentOffer) {
   }
   return { ok: true, status: QUEUE_STATUS.QUEUED, reason: null };
 }
+
+export async function persistQueue(priceStore, items = []) {
+  if (!priceStore?.replaceQueue) return items;
+  await priceStore.replaceQueue(items);
+  return items;
+}
+
+export async function loadPersistedQueue(priceStore) {
+  if (!priceStore?.queueItems) return [];
+  return priceStore.queueItems();
+}
+
+export async function markQueueStatus(priceStore, identityKey, status, extra = {}) {
+  if (!priceStore?.updateQueueItem || !identityKey) return null;
+  return priceStore.updateQueueItem(identityKey, { status, ...extra });
+}

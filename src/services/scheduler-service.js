@@ -11,8 +11,8 @@ import { evaluateReadiness } from './readiness-service.js';
 import { enabledCategories, mergeCategorySettings, offerMatchesCategories } from './category-service.js';
 import { hoursFromSchedule, mergeScheduleSettings } from './schedule-service.js';
 import { formatOfferHtml } from '../formatters/offer-message.js';
-import { mergeDealEngineConfig } from '../deal-engine/defaults.js';
-import { dryRunOffer, runDealEngine } from '../deal-engine/pipeline.js';
+import { mergeDealEngineConfig, QUEUE_STATUS } from '../deal-engine/defaults.js';
+import { dryRunOffer, revalidateBeforePublish, runDealEngine } from '../deal-engine/pipeline.js';
 import { formatDiagnosticsReport } from '../deal-engine/diagnostics.js';
 
 function sleep(ms) {
@@ -257,14 +257,18 @@ export class SchedulerService {
     if (!config.enabled) return null;
     const publications =
       typeof this.priceStore?.publications === 'function' ? await this.priceStore.publications() : [];
-    const result = await runDealEngine(collected, {
+      const result = await runDealEngine(collected, {
       config,
       priceStore: this.priceStore,
       publishedKeys: extra.publishedKeys,
       publications,
       limit: this.config.maxOffersPerRun,
-      requireAffiliateLink: this.config.requireAffiliateLink === true
+      requireAffiliateLink: this.config.requireAffiliateLink === true,
+      sourceFailures: extra.sourceFailures || 0
     });
+    if (result.report && extra.sourceFailures) {
+      result.report.sourceFailures = extra.sourceFailures;
+    }
     this.lastDealReport = result.report;
     return result;
   }
@@ -461,20 +465,44 @@ export class SchedulerService {
       let dealResult = null;
       if (dealConfig.enabled) {
         try {
-          dealResult = await this.runDealSelection(collected, { publishedKeys });
+          dealResult = await this.runDealSelection(collected, {
+            publishedKeys,
+            sourceFailures: sourceErrors.length
+          });
         } catch (error) {
           logger.warn('Deal Engine não interrompeu o ciclo legado.', error.message);
         }
       }
       if (dealConfig.controlSelection && dealResult) {
-        selection.selected = dealResult.approved.map((item) => ({
+        const stillValid = [];
+        const expired = [];
+        for (const item of dealResult.approved) {
+          const check = revalidateBeforePublish(item.queueItem, item.offer);
+          if (check.ok) stillValid.push(item);
+          else {
+            expired.push(item);
+            if (this.priceStore?.updateQueueItem && item.identity?.key) {
+              await this.priceStore.updateQueueItem(item.identity.key, {
+                status: check.status || QUEUE_STATUS.EXPIRED,
+                rejection: check.reason
+              });
+            }
+          }
+        }
+        if (dealResult.report && expired.length) {
+          dealResult.report.expired = (dealResult.report.expired || 0) + expired.length;
+        }
+        selection.selected = stillValid.map((item) => ({
           ...item.offer,
           dealScore: item.deal?.dealScore,
           confidenceScore: item.confidence?.confidenceScore,
           taxonomyId: item.classification?.taxonomyId,
           identityKey: item.identity?.key
         }));
-        selection.rejected = dealResult.rejected.map((item) => item.offer);
+        selection.rejected = [
+          ...dealResult.rejected.map((item) => item.offer),
+          ...expired.map((item) => item.offer)
+        ];
         selection.dealEngine = true;
       }
       const messages = [];

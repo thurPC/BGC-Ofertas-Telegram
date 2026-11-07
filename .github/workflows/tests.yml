@@ -33,6 +33,8 @@ jobs:
           node --check src/services/readiness-service.js
           node --check src/deal-engine/pipeline.js
           node --check src/deal-engine/identity.js
+          node --check src/deal-engine/quality-gate.js
+          node --check src/services/publishing-service.js
 
       - name: Executar testes
         run: npm test

@@ -99,6 +99,7 @@ ADMIN_IDS=123456789,987654321
 | `OFFER_EXCLUDE_KEYWORDS` | não | Palavras-chave extras de exclusão, separadas por vírgula |
 | `DEAL_ENGINE_ENABLED` | não | Padrão: `true`. Avalia o ciclo sem substituir a seleção legada |
 | `DEAL_ENGINE_CONTROL_SELECTION` | não | Padrão: `false`. Só então o Deal Engine escolhe o que entra na fila |
+| `DEAL_ENGINE_GATE_ON_PUBLISH` | não | Padrão: `false`. Se `true`, o gate e a revalidação bloqueiam `publish()` |
 | `DEAL_ENGINE_MIN_SCORE` | não | Deal Score mínimo. Padrão: `75` |
 | `DEAL_ENGINE_MIN_CONFIDENCE` | não | Confidence Score mínimo. Padrão: `90` |
 

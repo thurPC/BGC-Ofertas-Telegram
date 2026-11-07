@@ -1,22 +1,29 @@
 import { mergeDealEngineConfig, QUEUE_STATUS } from './defaults.js';
-import { mergeNormalizedFields } from './adapters.js';
+import { adaptDiscoveredProduct } from './discovery.js';
 import { identifyProduct } from './identity.js';
+import { applySemanticAuxiliary } from './semantic.js';
 import { classifyProduct } from './classification.js';
 import { compareMarkets, netSavings } from './comparison.js';
 import { scoreConfidence } from './confidence.js';
 import { applyDiversity, evaluateDedup, variantKey } from './dedup.js';
 import { createCycleTracker, statusFromGate } from './diagnostics.js';
+import { CyclePriceCache, isFreshSnapshot } from './cache.js';
 import { effectivePrice } from './price-intelligence.js';
 import { evaluateQualityGate } from './quality-gate.js';
-import { buildQueueItem, revalidateItem } from './queue.js';
+import { buildQueueItem, persistQueue, revalidateItem } from './queue.js';
+import { validateAffiliateLink } from './affiliate.js';
 import { scoreDeal } from './scoring.js';
 import { formatOfferHtml } from '../formatters/offer-message.js';
 
 export function evaluateOffer(rawOffer, context = {}) {
   const config = mergeDealEngineConfig(context.config);
-  const offer = mergeNormalizedFields(rawOffer, rawOffer?.source || context.sourceName || 'unknown');
-  const identity = context.identity || identifyProduct(offer);
+  const offer = adaptDiscoveredProduct(rawOffer, rawOffer?.source || context.sourceName || 'unknown');
+  let identity = context.identity || identifyProduct(offer);
+  if (context.semanticPeers) {
+    identity = applySemanticAuxiliary(identity, offer, context.semanticPeers);
+  }
   const classification = context.classification || classifyProduct(offer, identity);
+  offer.affiliate = validateAffiliateLink(offer, { requireAffiliateLink: context.requireAffiliateLink });
   const stats = context.stats || {
     sampleSize: 0,
     median30: null,
@@ -73,8 +80,9 @@ export async function runDealEngine(offers, context = {}) {
   tracker.markEnd('discovery');
 
   tracker.markStart('identify');
+  const cache = context.priceCache || new CyclePriceCache();
   for (const raw of incoming) {
-    const offer = mergeNormalizedFields(raw, raw?.source || 'unknown');
+    const offer = adaptDiscoveredProduct(raw, raw?.source || 'unknown');
     const identity = identifyProduct(offer);
     const classification = classifyProduct(offer, identity);
     if (identity.key && !identity.uncertain) tracker.count('identified');
@@ -94,8 +102,12 @@ export async function runDealEngine(offers, context = {}) {
     };
     if (context.priceStore && item.identity?.key) {
       try {
-        await context.priceStore.record(item.offer, item.identity, { snapshotLimit: config.snapshotLimit });
-        stats = await context.priceStore.stats(item.identity.key, now);
+        if (isFreshSnapshot(item.offer, 30 * 60 * 1000, now.getTime())) {
+          await context.priceStore.record(item.offer, item.identity, { snapshotLimit: config.snapshotLimit });
+        }
+        const cached = cache.get(item.identity.key, now.getTime());
+        stats = cached || (await context.priceStore.stats(item.identity.key, now));
+        cache.set(item.identity.key, stats, now.getTime());
       } catch {
         stats = { sampleSize: 0, median30: null, min: null, insufficient: true };
       }
@@ -149,6 +161,9 @@ export async function runDealEngine(offers, context = {}) {
     status: QUEUE_STATUS.QUEUED
   }));
   tracker.count('queued', queued.length);
+  if (context.priceStore) {
+    await persistQueue(context.priceStore, queued);
+  }
 
   const report = tracker.finish();
   if (typeof context.priceStore?.saveCycleReport === 'function') {

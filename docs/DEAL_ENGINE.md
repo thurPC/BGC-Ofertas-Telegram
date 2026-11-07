@@ -24,6 +24,10 @@ Módulos em `src/deal-engine/`:
 | `queue.js` | Fila ordenada e revalidação |
 | `pipeline.js` | Orquestração e dry-run |
 | `diagnostics.js` | Métricas por ciclo |
+| `semantic.js` | Similaridade auxiliar; nunca substitui identidade |
+| `affiliate.js` | Validação de link afiliado (não altera o fluxo Shopee) |
+| `discovery.js` | Adaptadores json-feed, Shopee e Mercado Livre via feed |
+| `cache.js` | Cache de ciclo; snapshot velho não conta como preço atual |
 
 A seleção automática **legada** (`offer-scorer`) continua no comando. O Deal Engine observa cada ciclo. Só assume a seleção se `DEAL_ENGINE_CONTROL_SELECTION=true`.
 
@@ -96,7 +100,7 @@ Antes de publicar: revalida preço, estoque e URL. Preço pior ou oferta sumida 
 | --- | --- | --- |
 | `DEAL_ENGINE_ENABLED` | `true` | Avalia o ciclo (observação) |
 | `DEAL_ENGINE_CONTROL_SELECTION` | `false` | Se `true`, substitui o ranking legado |
-| `DEAL_ENGINE_GATE_ON_PUBLISH` | `false` | Reserva para gate na publicação manual |
+| `DEAL_ENGINE_GATE_ON_PUBLISH` | `false` | Se `true`, o quality gate e a revalidação bloqueiam `publish()` |
 | `DEAL_ENGINE_MIN_SCORE` | `75` | Deal Score mínimo |
 | `DEAL_ENGINE_MIN_CONFIDENCE` | `90` | Confidence mínimo |
 | `DEAL_ENGINE_COOLDOWN_HOURS` | `24` | Cooldown por produto |
@@ -129,12 +133,20 @@ Os testes do Deal Engine cobrem identidade, variantes incompatíveis, classifica
 
 Não dependem de internet.
 
+## Persistência
+
+- Histórico e fila: `data/price-history.json` (JSON atômico com lock; não é SQLite)
+- A fila sobrevive a reinício. Revalidação ocorre antes de assumir a seleção (`DEAL_ENGINE_CONTROL_SELECTION`) e, se ligado, antes de `publish()`.
+- Cache de estatísticas vale só no ciclo corrente e ignora `fetchedAt` antigo.
+
 ## Limitações conhecidas
 
 - Sem histórico real o Deal Score fica baixo de propósito (fail-closed)
 - APIs de fabricantes/catálogos oficiais não estão autenticadas neste repositório
-- Mercado Livre só entra via feed já autorizado
-- `DEAL_ENGINE_CONTROL_SELECTION` desligado até calibração com dados reais
+- Mercado Livre só entra via feed já autorizado; não há scraping nem API privada
+- Comparação semântica é auxiliar e nunca confirma identidade
+- `DEAL_ENGINE_CONTROL_SELECTION` e `DEAL_ENGINE_GATE_ON_PUBLISH` desligados até calibração
+- Intervalo de busca: `OFFER_CHECK_INTERVAL_MINUTES` (padrão 30; a Hokas pode usar 5). Não altera env de produção
 - Não está pronto para produção só porque os unitários passaram
 
 ## Validação na Hokas
