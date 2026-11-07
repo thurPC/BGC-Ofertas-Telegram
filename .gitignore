@@ -7,6 +7,9 @@ data/*.json.tmp
 data/*.json.bak
 data/*.lock
 data/*.pid
+data/price-history.json
+data/price-history.json.bak
+data/price-history.json.tmp
 logs/
 *.log
 tmp/

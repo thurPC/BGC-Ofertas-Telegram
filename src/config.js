@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mergeDealEngineConfig } from './deal-engine/defaults.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -135,6 +136,15 @@ export function loadConfig(env = process.env) {
     excludeBooks: parseBoolean(env.OFFER_EXCLUDE_BOOKS, true),
     bookExcludeKeywords: parseCsv(env.OFFER_BOOK_EXCLUDE_KEYWORDS),
     bookDeviceAllowKeywords: parseCsv(env.OFFER_BOOK_DEVICE_ALLOW_KEYWORDS),
+    dealEngine: mergeDealEngineConfig({
+      enabled: parseBoolean(env.DEAL_ENGINE_ENABLED, true),
+      controlSelection: parseBoolean(env.DEAL_ENGINE_CONTROL_SELECTION, false),
+      gateOnPublish: parseBoolean(env.DEAL_ENGINE_GATE_ON_PUBLISH, false),
+      minDealScore: parseInteger(env.DEAL_ENGINE_MIN_SCORE, 75),
+      minConfidence: parseInteger(env.DEAL_ENGINE_MIN_CONFIDENCE, 90),
+      cooldownHours: parseInteger(env.DEAL_ENGINE_COOLDOWN_HOURS, 24),
+      variantCooldownHours: parseInteger(env.DEAL_ENGINE_VARIANT_COOLDOWN_HOURS, 12)
+    }),
     missing
   };
 }

@@ -1,0 +1,41 @@
+{
+  "offers": [
+    {
+      "name": "Placa de Vídeo Gigabyte GeForce RTX 5060 8GB GDDR7",
+      "brand": "Gigabyte",
+      "model": "RTX 5060",
+      "gtin": "7891234567895",
+      "mpn": "GV-N5060WF2-8GD",
+      "price": 1899.9,
+      "previousPrice": 2499.9,
+      "url": "https://s.shopee.com.br/rtx5060",
+      "imageUrl": "https://cf.shopee.com.br/rtx5060.jpg",
+      "store": "Shopee",
+      "source": "shopee-open-api",
+      "seller": "Loja Hardware",
+      "sales": 320,
+      "ratingStar": 4.8,
+      "stock": 12,
+      "freight": 0,
+      "category": "Placas de Vídeo",
+      "fetchedAt": "2026-11-07T12:00:00.000Z"
+    },
+    {
+      "name": "Placa de Vídeo Gigabyte GeForce RTX 5060 Ti 16GB GDDR7",
+      "brand": "Gigabyte",
+      "model": "RTX 5060 Ti",
+      "gtin": "7891234567801",
+      "mpn": "GV-N5060TIGF-16GD",
+      "price": 2599.9,
+      "previousPrice": 2899.9,
+      "url": "https://s.shopee.com.br/rtx5060ti",
+      "store": "Shopee",
+      "source": "shopee-open-api",
+      "seller": "Loja Hardware",
+      "sales": 80,
+      "ratingStar": 4.7,
+      "stock": 4,
+      "category": "Placas de Vídeo"
+    }
+  ]
+}

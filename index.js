@@ -24,6 +24,7 @@ import { createConfiguredSources } from './src/sources/json-feed-source.js';
 import { InstanceLock } from './src/process-lock.js';
 import { createShopeeAffiliateClient } from './src/services/shopee-affiliate-client.js';
 import { evaluateReadiness } from './src/services/readiness-service.js';
+import { PriceHistoryStore } from './src/deal-engine/price-store.js';
 
 dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
 
@@ -90,6 +91,8 @@ async function main() {
 
   const storage = new JsonStorage(path.join(config.dataDir, 'offers.json'));
   await storage.init();
+  const priceStore = PriceHistoryStore.fromConfig(config);
+  await priceStore.init();
 
   const settingsService = new SettingsService(storage, config);
   const categoryService = new CategoryService(storage, {
@@ -116,7 +119,9 @@ async function main() {
     offerService,
     publishingService,
     settingsService,
-    couponService
+    couponService,
+    priceStore,
+    dealEngine: config.dealEngine
   });
 
   const linkOptions = { shopeeClient };

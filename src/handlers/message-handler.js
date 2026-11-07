@@ -286,6 +286,15 @@ export function registerMessageHandler(bot, ctx) {
     );
   });
 
+  bot.onText(/^\/diagnostico(?:@\w+)?(?:\s|$)/, async (msg) => {
+    if (!isAdmin(ctx.config, msg.from?.id)) return denyAdmin(bot, msg.chat.id);
+    const report =
+      typeof ctx.scheduler?.formatLastDiagnostics === 'function'
+        ? ctx.scheduler.formatLastDiagnostics()
+        : 'Deal Engine ainda não registrou um ciclo nesta sessão.';
+    await bot.sendMessage(msg.chat.id, report, { parse_mode: 'HTML' });
+  });
+
   bot.onText(/^\/publicar(?:@\w+)?(?:\s+(.+))?$/, async (msg, match) => {
     if (!isAdmin(ctx.config, msg.from?.id)) return denyAdmin(bot, msg.chat.id);
     const id = String(match?.[1] || '').trim();

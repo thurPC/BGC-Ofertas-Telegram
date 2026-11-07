@@ -11,6 +11,9 @@ import { evaluateReadiness } from './readiness-service.js';
 import { enabledCategories, mergeCategorySettings, offerMatchesCategories } from './category-service.js';
 import { hoursFromSchedule, mergeScheduleSettings } from './schedule-service.js';
 import { formatOfferHtml } from '../formatters/offer-message.js';
+import { mergeDealEngineConfig } from '../deal-engine/defaults.js';
+import { dryRunOffer, runDealEngine } from '../deal-engine/pipeline.js';
+import { formatDiagnosticsReport } from '../deal-engine/diagnostics.js';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -29,7 +32,19 @@ function hasPublishedIdentity(candidate, publishedKeys) {
 }
 
 export class SchedulerService {
-  constructor({ config, sources, offerService, publishingService, settingsService, couponService, onTick, sleepFn, lockFile }) {
+  constructor({
+    config,
+    sources,
+    offerService,
+    publishingService,
+    settingsService,
+    couponService,
+    onTick,
+    sleepFn,
+    lockFile,
+    priceStore,
+    dealEngine
+  }) {
     this.config = config;
     this.sources = sources || [];
     this.offerService = offerService;
@@ -41,6 +56,9 @@ export class SchedulerService {
     this.timer = null;
     this.running = false;
     this.lockFile = lockFile || (config?.dataDir ? path.join(config.dataDir, 'scheduler.lock') : null);
+    this.priceStore = priceStore || null;
+    this.dealEngine = mergeDealEngineConfig(dealEngine || config?.dealEngine);
+    this.lastDealReport = null;
   }
 
   applyCategorySettings(settings) {
@@ -230,6 +248,44 @@ export class SchedulerService {
     };
   }
 
+  dealEngineConfig() {
+    return mergeDealEngineConfig(this.dealEngine || this.config?.dealEngine);
+  }
+
+  async runDealSelection(collected, extra = {}) {
+    const config = this.dealEngineConfig();
+    if (!config.enabled) return null;
+    const publications =
+      typeof this.priceStore?.publications === 'function' ? await this.priceStore.publications() : [];
+    const result = await runDealEngine(collected, {
+      config,
+      priceStore: this.priceStore,
+      publishedKeys: extra.publishedKeys,
+      publications,
+      limit: this.config.maxOffersPerRun,
+      requireAffiliateLink: this.config.requireAffiliateLink === true
+    });
+    this.lastDealReport = result.report;
+    return result;
+  }
+
+  lastDiagnosticsReport() {
+    return this.lastDealReport;
+  }
+
+  formatLastDiagnostics() {
+    if (!this.lastDealReport) {
+      return formatDiagnosticsReport(undefined, {
+        note: 'Nenhum ciclo do Deal Engine foi executado nesta sessão.'
+      });
+    }
+    return formatDiagnosticsReport(this.lastDealReport, {
+      note: this.config.autoPublish
+        ? 'Publicação automática permanece sujeita a OFFER_AUTO_PUBLISH e à verificação de prontidão.'
+        : 'Modo teste: o Deal Engine avalia ofertas sem publicar no canal.'
+    });
+  }
+
   async importFromSources({ publish = false, collected, sourceErrors, existing, selection, coupons } = {}) {
     if (!this.hasConfiguredSource()) {
       return {
@@ -401,11 +457,37 @@ export class SchedulerService {
           ? await this.offerService.seenKeys()
           : duplicateKeys(existing);
       const selection = this.#selectCandidates(collected, existing, publishedKeys);
+      const dealConfig = this.dealEngineConfig();
+      let dealResult = null;
+      if (dealConfig.enabled) {
+        try {
+          dealResult = await this.runDealSelection(collected, { publishedKeys });
+        } catch (error) {
+          logger.warn('Deal Engine não interrompeu o ciclo legado.', error.message);
+        }
+      }
+      if (dealConfig.controlSelection && dealResult) {
+        selection.selected = dealResult.approved.map((item) => ({
+          ...item.offer,
+          dealScore: item.deal?.dealScore,
+          confidenceScore: item.confidence?.confidenceScore,
+          taxonomyId: item.classification?.taxonomyId,
+          identityKey: item.identity?.key
+        }));
+        selection.rejected = dealResult.rejected.map((item) => item.offer);
+        selection.dealEngine = true;
+      }
       const messages = [];
+      const dryRuns = [];
       if (this.publishingService?.resolveTemplate) {
         const template = await this.publishingService.resolveTemplate();
         for (const offer of selection.selected) {
           messages.push(formatOfferHtml(offer, { template, channelLink: template.channelLink }));
+        }
+        if (dealResult?.evaluated?.length) {
+          for (const item of dealResult.evaluated) {
+            dryRuns.push(dryRunOffer(item, { template, channelLink: template.channelLink }));
+          }
         }
       }
 
@@ -421,6 +503,15 @@ export class SchedulerService {
         logger.info(
           `Modo teste: ${collected.length} oferta(s) lida(s), ${selection.selected.length} selecionada(s), nenhuma publicação.`
         );
+        if (dealResult?.report) {
+          logger.info('Deal Engine (dry-run)', {
+            discovered: dealResult.report.discovered,
+            identified: dealResult.report.identified,
+            classified: dealResult.report.classified,
+            rejected: dealResult.report.rejected,
+            queued: dealResult.report.queued
+          });
+        }
         if (typeof this.offerService.recordAutomationRun === 'function') {
           await this.offerService.recordAutomationRun({
             fetched: collected.length,
@@ -445,6 +536,15 @@ export class SchedulerService {
           rejected: selection.rejected.length,
           errors: sourceErrors,
           messages,
+          dealEngine: dealResult
+            ? {
+                approved: dealResult.approved.length,
+                rejected: dealResult.rejected.length,
+                queued: dealResult.queued.length,
+                report: dealResult.report,
+                dryRuns
+              }
+            : null,
           note: 'Publicação automática desativada. O feed foi consultado, pontuado e validado apenas para leitura. Nada foi importado nem publicado no canal. Use importação administrativa ou OFFER_AUTO_PUBLISH=true após revisão.'
         };
       }
