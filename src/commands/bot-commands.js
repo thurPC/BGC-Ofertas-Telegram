@@ -15,6 +15,7 @@ export const ADMIN_BOT_COMMANDS = [
   { command: 'novaoferta', description: 'Cadastro de oferta' },
   { command: 'ofertas', description: 'Lista ofertas cadastradas' },
   { command: 'status', description: 'Estado operacional' },
+  { command: 'diagnostico', description: 'Métricas do Deal Engine' },
   { command: 'publicar', description: 'Publicar oferta pelo ID' },
   { command: 'cancelar', description: 'Cancelar cadastro em andamento' },
   { command: 'ajuda_admin', description: 'Ajuda administrativa' }

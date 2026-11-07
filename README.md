@@ -17,6 +17,7 @@ Esta primeira versão prioriza o **cadastro manual**, a **prévia** e a **confir
 - Bloqueio de promoções repetidas (mesmo produto, link, ASIN ou cadastro já publicado)
 - Armazenamento JSON com gravação atômica e controle de concorrência
 - Arquitetura pronta para fontes automáticas autorizadas (desligada por padrão)
+- BGC Deal Engine: identidade de produto, histórico de preços, Deal Score, Confidence Score e quality gate (observação; não publica sozinho)
 
 O bot **não inventa** preços, descontos, cupons, avaliações, frete, estoque, imagens ou URLs. Campos sem confirmação são omitidos.
 
@@ -96,6 +97,11 @@ ADMIN_IDS=123456789,987654321
 | `OFFER_ALLOWED_HOURS` | não | Horários `8-22` ou lista `9,10,11` |
 | `OFFER_EXCLUDE_CATEGORIES` | não | Categorias extras de exclusão, separadas por vírgula |
 | `OFFER_EXCLUDE_KEYWORDS` | não | Palavras-chave extras de exclusão, separadas por vírgula |
+| `DEAL_ENGINE_ENABLED` | não | Padrão: `true`. Avalia o ciclo sem substituir a seleção legada |
+| `DEAL_ENGINE_CONTROL_SELECTION` | não | Padrão: `false`. Só então o Deal Engine escolhe o que entra na fila |
+| `DEAL_ENGINE_GATE_ON_PUBLISH` | não | Padrão: `false`. Se `true`, o gate e a revalidação bloqueiam `publish()` |
+| `DEAL_ENGINE_MIN_SCORE` | não | Deal Score mínimo. Padrão: `75` |
+| `DEAL_ENGINE_MIN_CONFIDENCE` | não | Confidence Score mínimo. Padrão: `90` |
 
 Na inicialização o bot informa quais variáveis estão ausentes **sem revelar valores**.
 
@@ -354,3 +360,10 @@ MIT. Veja `LICENSE`.
 6. Se a verificação de prontidão bloquear, corrija canal, credenciais, duplicidade ou testes antes de republicar.
 
 Próximo passo de hospedagem: escolha um serviço com processo 24h e disco persistente, defina as mesmas variáveis de ambiente e inicie com `npm start`. Mantenha `OFFER_AUTO_PUBLISH=false` até validar busca real, links afiliados, canal privado de teste e a verificação de prontidão.
+
+Documentação do motor inteligente: `docs/DEAL_ENGINE.md`. Dry-run local (fontes configuradas; `--file` é override opcional):
+
+```bash
+npm run dry-run
+npm run dry-run -- --file test/fixtures/deal-engine-offers.json
+```

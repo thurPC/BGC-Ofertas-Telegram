@@ -5,6 +5,8 @@ import { categoryMismatchMessage, offerMatchesCategories } from './category-serv
 import { duplicateMessage, findDuplicates, fingerprint, identityKeys, OFFER_STATUS } from './offer-service.js';
 import { defaultTemplate, mergeTemplate } from './template-service.js';
 import { validateHttpUrl } from './validation-service.js';
+import { mergeDealEngineConfig, QUEUE_STATUS } from '../deal-engine/defaults.js';
+import { evaluateOffer, revalidateBeforePublish } from '../deal-engine/pipeline.js';
 
 function isTelegramError(error) {
   return Boolean(error?.response?.body || error?.code === 'ETELEGRAM');
@@ -28,14 +30,48 @@ function publicError(error) {
 }
 
 export class PublishingService {
-  constructor({ bot, config, offerService, templateService, couponService, settingsService }) {
+  constructor({ bot, config, offerService, templateService, couponService, settingsService, priceStore, dealEngine }) {
     this.bot = bot;
     this.config = config;
     this.offerService = offerService;
     this.templateService = templateService;
     this.couponService = couponService;
     this.settingsService = settingsService;
+    this.priceStore = priceStore || null;
+    this.dealEngine = mergeDealEngineConfig(dealEngine || config?.dealEngine);
     this.inFlight = new Set();
+  }
+
+  dealEngineConfig() {
+    return mergeDealEngineConfig(this.dealEngine || this.config?.dealEngine);
+  }
+
+  evaluateForPublish(offer) {
+    const config = this.dealEngineConfig();
+    if (!config.enabled || !config.gateOnPublish) return { ok: true, skipped: true };
+    const evaluated = evaluateOffer(offer, {
+      config,
+      requireAffiliateLink: this.config?.requireAffiliateLink === true
+    });
+    if (!evaluated.gate?.ok) {
+      return {
+        ok: false,
+        error: (evaluated.gate.messages || ['Oferta bloqueada pelo Deal Engine.']).join(' '),
+        dealEngine: true,
+        evaluated
+      };
+    }
+    const revalidation = revalidateBeforePublish(evaluated.queueItem, offer);
+    if (!revalidation.ok) {
+      return {
+        ok: false,
+        error: `Oferta expirada na revalidação (${revalidation.reason}).`,
+        dealEngine: true,
+        evaluated,
+        revalidation
+      };
+    }
+    return { ok: true, evaluated, revalidation };
   }
 
   async attachCoupon(offer, actorId) {
@@ -157,6 +193,9 @@ export class PublishingService {
     const uniqueness = await this.assertNotDuplicate(offer);
     if (!uniqueness.ok) return uniqueness;
 
+    const gated = this.evaluateForPublish(offer);
+    if (!gated.ok) return gated;
+
     const chatId = targetChatId || this.config.channelId;
     if (!chatId) return { ok: false, error: 'Canal de publicação não configurado.' };
 
@@ -174,6 +213,21 @@ export class PublishingService {
       const result = await this.sendToChat(chatId, prepared);
       if (offer.id && this.offerService) {
         await this.offerService.markPublished(offer.id, { actorId });
+      }
+      if (this.priceStore?.recordPublication) {
+        const evaluated = gated.evaluated;
+        await this.priceStore.recordPublication({
+          identityKey: evaluated?.identity?.key || offer.identityKey,
+          variantKey: evaluated?.variantKey,
+          taxonomyId: evaluated?.classification?.taxonomyId,
+          family: evaluated?.classification?.family,
+          brand: evaluated?.identity?.brand,
+          dealScore: evaluated?.deal?.dealScore,
+          price: offer.price
+        });
+        if (evaluated?.identity?.key && this.priceStore.updateQueueItem) {
+          await this.priceStore.updateQueueItem(evaluated.identity.key, { status: QUEUE_STATUS.PUBLISHED });
+        }
       }
       return { ...result, publishedTo: chatId, needsImageReview };
     } catch (error) {
