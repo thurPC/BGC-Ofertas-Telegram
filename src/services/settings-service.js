@@ -238,10 +238,8 @@ export class SettingsService {
   }
 
   async exclusionOptions() {
-    const settings = await this.get();
-    const extra = settings.categories.filter((item) => item.enabled).map((item) => item.name);
     return {
-      extraCategories: [...this.envCategories(), ...extra],
+      extraCategories: [...this.envCategories()],
       extraKeywords: this.config.excludedKeywords || []
     };
   }

@@ -6,6 +6,7 @@ import {
   formatHour,
   parseHourInput
 } from '../services/settings-service.js';
+import { categoryPanel as automationCategoryPanel } from './category.js';
 import { escapeHtml } from '../services/validation-service.js';
 
 const SETTINGS_SESSIONS = new Map();
@@ -32,9 +33,9 @@ export function clearSettingsSession(userId) {
 export const CATEGORY_HELP = [
   '🏷️ <b>Painel de categorias</b>',
   '',
-  'Categorias extras entram no filtro de conteúdo quando estão <b>ativas</b>.',
-  'Opções: adicionar, ativar, desativar e remover item.',
-  'Categorias inativas permanecem na lista, mas não bloqueiam produtos.'
+  'Somente ofertas das categorias <b>ativas</b> são buscadas e publicadas.',
+  'Itens extras entram como palavras-chave de busca e também liberam a publicação.',
+  'Opções: adicionar, ativar, desativar e remover item.'
 ].join('\n');
 
 export const HOURS_HELP = [
@@ -119,9 +120,9 @@ export function categoryItemPanel(category) {
       `<b>${escapeHtml(category.name)}</b>`,
       `Estado: ${state}`,
       '',
-      'Ativa: entra no filtro de exclusão.',
-      'Inativa: permanece na lista, sem filtrar.',
-      'Remover item: apaga a categoria da lista.'
+        'Ativa: entra na busca e libera a publicação.',
+        'Inativa: permanece na lista, sem filtrar nem publicar.',
+        'Remover item: apaga a categoria da lista.'
     ].join('\n'),
     keyboard: categoryItemKeyboard(category)
   };
@@ -140,7 +141,28 @@ export function categoriesNote(categories = []) {
   return `Categorias extras: ${active} ativa(s) de ${categories.length}.`;
 }
 
+async function applyCategoryRuntime(ctx) {
+  if (typeof ctx.scheduler?.applyCategorySettings !== 'function') return;
+  if (ctx.categoryService?.get) {
+    ctx.scheduler.applyCategorySettings(await ctx.categoryService.get());
+    return;
+  }
+  if (ctx.settingsService?.categorySettings) {
+    ctx.scheduler.applyCategorySettings(await ctx.settingsService.categorySettings());
+  }
+}
+
 async function sendCategoryHome(bot, ctx, chatId, prefix = '') {
+  if (ctx.categoryService?.get) {
+    const settings = await ctx.categoryService.get();
+    const panel = automationCategoryPanel(settings);
+    const html = prefix ? `${prefix}\n\n${panel.html}` : panel.html;
+    await bot.sendMessage(chatId, html, {
+      parse_mode: 'HTML',
+      reply_markup: panel.keyboard
+    });
+    return;
+  }
   const categories = await ctx.settingsService.listCategories();
   const panel = categoryPanel(categories);
   const html = prefix ? `${prefix}\n\n${panel.html}` : panel.html;
@@ -198,6 +220,7 @@ export function registerSettingsCommand(bot, ctx) {
           return;
         }
         clearSettingsSession(userId);
+        await applyCategoryRuntime(ctx);
         await sendCategoryHome(bot, ctx, msg.chat.id, `Categoria <b>${escapeHtml(result.category.name)}</b> adicionada e ativa.`);
         return;
       }
@@ -285,6 +308,7 @@ export function registerSettingsCallbacks(bot, ctx) {
           await bot.sendMessage(chatId, result.error);
           return;
         }
+        await applyCategoryRuntime(ctx);
         const panel = categoryItemPanel(result.category);
         await bot.sendMessage(chatId, panel.html, {
           parse_mode: 'HTML',
@@ -310,6 +334,7 @@ export function registerSettingsCallbacks(bot, ctx) {
           await bot.sendMessage(chatId, result.error);
           return;
         }
+        await applyCategoryRuntime(ctx);
         await sendCategoryHome(
           bot,
           ctx,

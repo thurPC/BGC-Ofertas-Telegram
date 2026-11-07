@@ -48,7 +48,7 @@ export function detectCategory(offer) {
   if (offer?.category && DEFAULT_CATEGORIES.some((item) => item.id === offer.category)) {
     return offer.category;
   }
-  const haystack = normalize(`${offer?.name ?? ''} ${offer?.store ?? ''}`);
+  const haystack = normalize(`${offer?.name ?? ''} ${offer?.store ?? ''} ${offer?.category ?? ''} ${offer?.description ?? ''}`);
   if (!haystack) return null;
   const match = CATEGORY_TERMS.find((item) => haystack.includes(item.keyword));
   return match?.id ?? null;

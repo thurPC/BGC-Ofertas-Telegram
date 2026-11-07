@@ -6,10 +6,12 @@ import test from 'node:test';
 import { JsonStorage } from '../src/storage/json-storage.js';
 import {
   CategoryService,
+  categoryMismatchMessage,
   defaultCategorySettings,
   describeCategories,
   enabledCategories,
   mergeCategorySettings,
+  offerMatchesCategories,
   searchKeywordsFromSettings
 } from '../src/services/category-service.js';
 import { categoryKeyboard, categoryPanel, registerCategoryCallbacks, registerCategoryCommand } from '../src/commands/category.js';
@@ -84,6 +86,15 @@ test('searchKeywordsFromSettings usa categorias ativas e extras', () => {
   assert.ok(keywords.includes('cadeira gamer'));
   assert.equal(keywords.some((item) => /tecnologia/i.test(item)), false);
   assert.equal(enabledCategories({ enabled: ['games'] }).length, 1);
+});
+
+test('offerMatchesCategories respeita categorias ativas e itens extras', () => {
+  const gamesOnly = mergeCategorySettings({ enabled: ['games'], extraKeywords: ['air fryer'] });
+  assert.equal(offerMatchesCategories({ name: 'Headset Gamer 7.1', category: 'games' }, gamesOnly), true);
+  assert.equal(offerMatchesCategories({ name: 'Notebook Dell i7', category: 'tecnologia' }, gamesOnly), false);
+  assert.equal(offerMatchesCategories({ name: 'Air Fryer 4L', category: 'casa' }, gamesOnly), true);
+  assert.equal(offerMatchesCategories({ name: 'Sabonete artesanal' }, gamesOnly), false);
+  assert.match(categoryMismatchMessage({ name: 'Notebook Dell i7', category: 'tecnologia' }, gamesOnly), /categorias ativas/i);
 });
 
 test('describeCategories e teclado mostram o estado atual', () => {
@@ -237,6 +248,97 @@ test('agendador ignora categoria desligada e aplica palavras extras na fonte Sho
   assert.ok(source.keywords.includes('headset gamer'));
   assert.equal(source.keywords.includes('tecnologia'), false);
   assert.deepEqual(imported, ['Headset Gamer 7.1']);
+});
+
+test('agendador publica extra ativo e recusa categoria desligada', async () => {
+  const imported = [];
+  const published = [];
+  const source = {
+    name: 'shopee-open-api',
+    keywords: [],
+    isConfigured() {
+      return true;
+    },
+    applySearchOptions({ keywords }) {
+      this.keywords = keywords;
+    },
+    async fetch() {
+      return {
+        ok: true,
+        offers: [
+          {
+            name: 'Air Fryer 4L',
+            price: 199.9,
+            previousPrice: 399.9,
+            url: 'https://s.shopee.com.br/air',
+            store: 'Shopee',
+            source: 'shopee-open-api',
+            category: 'casa',
+            commissionRate: 8,
+            externalId: 'casa-2',
+            imageUrl: 'https://cf.shopee.com.br/air.jpg'
+          },
+          {
+            name: 'Smart TV 50 polegadas',
+            price: 1899.9,
+            previousPrice: 2499.9,
+            url: 'https://s.shopee.com.br/tv',
+            store: 'Shopee',
+            source: 'shopee-open-api',
+            category: 'eletronicos',
+            commissionRate: 6,
+            externalId: 'tv-1',
+            imageUrl: 'https://cf.shopee.com.br/tv.jpg'
+          }
+        ],
+        errors: []
+      };
+    }
+  };
+  const scheduler = new SchedulerService({
+    config: {
+      autoPublish: true,
+      checkIntervalMinutes: 30,
+      maxOffersPerRun: 5,
+      publishGapSeconds: 0,
+      minOfferScore: 20,
+      requireAffiliateLink: false,
+      allowedHours: [],
+      shopeeKeywords: [],
+      excludeBooks: true,
+      channelId: '-100',
+      token: 'x',
+      adminIds: [1n],
+      shopeeAppId: '1',
+      shopeeAppSecret: 'secret'
+    },
+    sources: [source],
+    offerService: {
+      async list() {
+        return [];
+      },
+      async create(input) {
+        imported.push(input.name);
+        return { ok: true, offer: { id: input.externalId, ...input, status: 'pronta' } };
+      }
+    },
+    publishingService: {
+      async publish(offer) {
+        published.push(offer.name);
+        return { ok: true };
+      }
+    },
+    sleepFn: async () => undefined
+  });
+  scheduler.applyCategorySettings({
+    enabled: ['games'],
+    extraKeywords: ['air fryer'],
+    excludeBooks: true
+  });
+  const result = await scheduler.run();
+  assert.equal(result.ok, true);
+  assert.deepEqual(imported, ['Air Fryer 4L']);
+  assert.deepEqual(published, ['Air Fryer 4L']);
 });
 
 test('item extra pode ser adicionado, desativado e removido', async () => {

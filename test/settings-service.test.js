@@ -13,6 +13,7 @@ import {
   resolveAllowedHours
 } from '../src/services/settings-service.js';
 import { analyzeExclusion } from '../src/services/exclusion-filter.js';
+import { offerMatchesCategories } from '../src/services/category-service.js';
 import { isWithinAllowedHours } from '../src/sources/source-interface.js';
 import { SchedulerService } from '../src/services/scheduler-service.js';
 
@@ -43,24 +44,30 @@ test('painel de categoria adiciona, ativa, desativa e remove item', async () => 
   const on = await service.setCategoryEnabled(added.category.id, true, { actorId: 1 });
   assert.equal(on.category.enabled, true);
   options = await service.exclusionOptions();
-  assert.deepEqual(options.extraCategories, ['Papelaria']);
+  assert.equal(options.extraCategories.includes('Papelaria'), false);
+  const allow = await service.categorySettings();
+  assert.deepEqual(allow.extraKeywords, ['Papelaria']);
 
   const removed = await service.removeCategory(added.category.id, { actorId: 1 });
   assert.equal(removed.ok, true);
   assert.equal((await service.listCategories()).length, 0);
 });
 
-test('categoria ativa entra no filtro e inativa não bloqueia', async () => {
+test('categoria extra ativa libera publicação e inativa não entra no allowlist', async () => {
   const { service } = await tempSettings();
   const added = await service.addCategory('Cordas');
   const product = { name: 'Guitarra', category: 'Cordas' };
 
   let options = await service.exclusionOptions();
-  assert.equal(analyzeExclusion(product, options).excluded, true);
+  assert.equal(analyzeExclusion(product, options).excluded, false);
+  let allow = await service.categorySettings();
+  assert.equal(offerMatchesCategories(product, allow), true);
 
   await service.setCategoryEnabled(added.category.id, false);
   options = await service.exclusionOptions();
   assert.equal(analyzeExclusion(product, options).excluded, false);
+  allow = await service.categorySettings();
+  assert.equal(offerMatchesCategories(product, allow), false);
 });
 
 test('parseHourInput aceita hora 24h sem minutos e recusa minutos', () => {

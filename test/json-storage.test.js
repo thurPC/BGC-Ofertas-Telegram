@@ -97,7 +97,9 @@ test('SettingsService lê o objeto novo e expõe os extras ativos no filtro', as
   const list = await service.listCategories();
   assert.deepEqual(list.map((item) => item.name), ['air fryer', 'item antigo']);
   const options = await service.exclusionOptions();
-  assert.deepEqual(options.extraCategories, ['air fryer']);
+  assert.equal(options.extraCategories.includes('air fryer'), false);
+  const allow = await service.categorySettings();
+  assert.deepEqual(allow.extraKeywords, ['air fryer']);
 });
 
 test('SettingsService migra o array antigo para a lista do painel', async () => {

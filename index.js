@@ -10,12 +10,14 @@ import { registerMessageHandler } from './src/handlers/message-handler.js';
 import { registerCallbackHandler } from './src/handlers/callback-handler.js';
 import { registerTemplateCallbacks, registerTemplateCommand } from './src/commands/template.js';
 import { registerSettingsCallbacks, registerSettingsCommand } from './src/commands/settings.js';
+import { registerCategoryCallbacks, registerCategoryCommand } from './src/commands/category.js';
 import { registerBotMenuCommands } from './src/commands/bot-commands.js';
 import { OfferService } from './src/services/offer-service.js';
 import { PublishingService } from './src/services/publishing-service.js';
 import { SchedulerService } from './src/services/scheduler-service.js';
 import { TemplateService } from './src/services/template-service.js';
 import { SettingsService } from './src/services/settings-service.js';
+import { CategoryService } from './src/services/category-service.js';
 import { CouponService } from './src/services/coupon-service.js';
 import { JsonStorage } from './src/storage/json-storage.js';
 import { createConfiguredSources } from './src/sources/json-feed-source.js';
@@ -90,11 +92,22 @@ async function main() {
   await storage.init();
 
   const settingsService = new SettingsService(storage, config);
+  const categoryService = new CategoryService(storage, {
+    excludeBooks: config.excludeBooks,
+    shopeeKeywords: config.shopeeKeywords
+  });
   const couponService = new CouponService(storage);
   const offerService = new OfferService(storage, { settingsService, couponService });
   const templateService = new TemplateService(storage);
   bot = createBot(config.token);
-  const publishingService = new PublishingService({ bot, config, offerService, templateService, couponService });
+  const publishingService = new PublishingService({
+    bot,
+    config,
+    offerService,
+    templateService,
+    couponService,
+    settingsService
+  });
   const shopeeClient = createShopeeAffiliateClient(config);
   const sources = createConfiguredSources(config, { shopeeClient });
   scheduler = new SchedulerService({
@@ -107,7 +120,17 @@ async function main() {
   });
 
   const linkOptions = { shopeeClient };
-  const ctx = { config, offerService, publishingService, scheduler, templateService, settingsService, couponService, linkOptions };
+  const ctx = {
+    config,
+    offerService,
+    publishingService,
+    scheduler,
+    templateService,
+    settingsService,
+    categoryService,
+    couponService,
+    linkOptions
+  };
 
   registerPublicCommands(bot);
   registerMessageHandler(bot, ctx);
@@ -116,6 +139,8 @@ async function main() {
   registerTemplateCallbacks(bot, ctx);
   registerSettingsCommand(bot, ctx);
   registerSettingsCallbacks(bot, ctx);
+  registerCategoryCommand(bot, ctx);
+  registerCategoryCallbacks(bot, ctx);
 
   await registerBotMenuCommands(bot, config);
 

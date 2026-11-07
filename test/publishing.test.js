@@ -146,6 +146,111 @@ test('recusa publicação sem link válido', async () => {
   assert.equal(result.ok, false);
 });
 
+test('publicação automática recusa oferta fora das categorias ativas', async () => {
+  const sent = [];
+  const service = new PublishingService({
+    bot: {
+      async sendPhoto(chatId, photo, extra) {
+        sent.push({ extra });
+        return { message_id: 1 };
+      },
+      async sendMessage(chatId, text, extra) {
+        sent.push({ text, extra });
+        return { message_id: 2 };
+      }
+    },
+    config: { channelId: '-100123' },
+    offerService: { markPublished: async () => ({ ok: true }) },
+    templateService: { async get() { return templateWithChannel(); } },
+    settingsService: {
+      async categorySettings() {
+        return { enabled: ['games'], extras: [], extraKeywords: [], excludeBooks: true };
+      }
+    }
+  });
+  const blocked = await service.publish(
+    { ...completeOffer, source: 'shopee-open-api', category: 'tecnologia', name: 'Notebook Dell i7' },
+    { actorId: 'scheduler' }
+  );
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.error, /categorias ativas/i);
+  assert.equal(sent.length, 0);
+
+  const allowed = await service.publish(
+    {
+      ...completeOffer,
+      source: 'shopee-open-api',
+      category: 'games',
+      name: 'Headset Gamer 7.1'
+    },
+    { actorId: 'scheduler' }
+  );
+  assert.equal(allowed.ok, true);
+  assert.equal(sent.length, 1);
+});
+
+test('publicação manual não é bloqueada pelo allowlist de categorias', async () => {
+  const sent = [];
+  const service = new PublishingService({
+    bot: {
+      async sendPhoto(chatId, photo, extra) {
+        sent.push({ extra });
+        return { message_id: 1 };
+      }
+    },
+    config: { channelId: '-100123' },
+    offerService: { markPublished: async () => ({ ok: true }) },
+    templateService: { async get() { return templateWithChannel(); } },
+    settingsService: {
+      async categorySettings() {
+        return { enabled: ['games'], extras: [], extraKeywords: [], excludeBooks: true };
+      }
+    }
+  });
+  const result = await service.publish(
+    { ...completeOffer, source: 'manual', name: 'Cafeteira elétrica', category: 'casa' },
+    { actorId: 1 }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(sent.length, 1);
+});
+
+test('item extra ativo libera publicação automática da palavra-chave', async () => {
+  const sent = [];
+  const service = new PublishingService({
+    bot: {
+      async sendPhoto(chatId, photo, extra) {
+        sent.push({ extra });
+        return { message_id: 1 };
+      }
+    },
+    config: { channelId: '-100123' },
+    offerService: { markPublished: async () => ({ ok: true }) },
+    templateService: { async get() { return templateWithChannel(); } },
+    settingsService: {
+      async categorySettings() {
+        return {
+          enabled: ['games'],
+          extras: [{ keyword: 'air fryer', enabled: true }],
+          extraKeywords: ['air fryer'],
+          excludeBooks: true
+        };
+      }
+    }
+  });
+  const result = await service.publish(
+    {
+      ...completeOffer,
+      source: 'shopee-open-api',
+      name: 'Air Fryer 4L',
+      category: 'casa'
+    },
+    { actorId: 'scheduler' }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(sent.length, 1);
+});
+
 test('recusa republicar oferta já publicada', async () => {
   const sent = [];
   const service = new PublishingService({
