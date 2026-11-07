@@ -391,6 +391,70 @@ test('agendador importa cupons mesmo com publicacao automatica desativada', asyn
   assert.equal(listed.some((item) => item.code === 'NOTE10'), true);
 });
 
+test('publicacao automatica persiste cupons do feed e associa na criacao', async () => {
+  const { service, storage } = await tempCouponService();
+  const offerService = new OfferService(storage, { couponService: service });
+  const published = [];
+  const source = {
+    name: 'json-feed',
+    isConfigured: () => true,
+    async fetch() {
+      return {
+        ok: true,
+        offers: [
+          {
+            name: 'Fone Bluetooth',
+            price: 200,
+            previousPrice: 400,
+            imageUrl: 'https://cf.shopee.com.br/fone.jpg',
+            url: 'https://shopee.com.br/fone?afiliado=bgc',
+            store: 'Shopee',
+            category: 'Eletronicos',
+            source: 'json-feed'
+          }
+        ],
+        coupons: [coupon({ code: 'ELETRO10', marketplace: 'shopee', categories: ['Eletronicos'] })]
+      };
+    }
+  };
+  const scheduler = new SchedulerService({
+    config: {
+      autoPublish: true,
+      checkIntervalMinutes: 60,
+      maxOffersPerRun: 5,
+      publishGapSeconds: 0,
+      minOfferScore: 20,
+      requireAffiliateLink: false,
+      allowedHours: [],
+      maxPrice: null,
+      minDiscountPercent: null,
+      allowedStores: [],
+      channelId: '-100123',
+      token: 'x',
+      adminIds: [1n],
+      feedUrl: 'https://example.com/feed.json'
+    },
+    sources: [source],
+    offerService,
+    publishingService: {
+      async publish(offer) {
+        published.push(offer);
+        return { ok: true };
+      }
+    },
+    couponService: service
+  });
+  const result = await scheduler.run();
+  assert.equal(result.ok, true);
+  assert.equal(result.imported, 1);
+  assert.equal(result.published, 1);
+  const listed = await service.list();
+  assert.equal(listed.some((item) => item.code === 'ELETRO10'), true);
+  assert.equal(published[0].coupon, 'ELETRO10');
+  const stored = await offerService.list();
+  assert.equal(stored[0].coupon, 'ELETRO10');
+});
+
 test('couponFromOfferFields nao inventa desconto', () => {
   const extracted = couponFromOfferFields({ coupon: 'PAGINA10', couponConditions: 'Valido na pagina', store: 'Shopee' });
   assert.equal(extracted.code, 'PAGINA10');
