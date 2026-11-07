@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { extractAsin } from './link-extractor.js';
 import { analyzeExclusion, exclusionMessage, isExcludedProduct } from './exclusion-filter.js';
+import { categoryMismatchMessage, offerMatchesCategories } from './category-service.js';
 import { calculateDiscount, validateOfferInput } from './validation-service.js';
 import { offerIdentityKeys, offersShareIdentity } from './offer-identity.js';
 
@@ -246,6 +247,17 @@ export class OfferService {
     if (isExcludedProduct(validation.offer, exclusionOptions)) {
       return { ok: false, error: exclusionMessage(analyzeExclusion(validation.offer, exclusionOptions).reasons) };
     }
+    const categorySettings = this.settingsService?.categorySettings
+      ? await this.settingsService.categorySettings()
+      : null;
+    const sourceName = String(input.source ?? 'manual');
+    if (
+      categorySettings &&
+      sourceName !== 'manual' &&
+      !offerMatchesCategories({ ...validation.offer, category: input.category, description: input.description }, categorySettings)
+    ) {
+      return { ok: false, error: categoryMismatchMessage(validation.offer, categorySettings) };
+    }
 
     const candidate = {
       ...validation.offer,
@@ -390,6 +402,17 @@ export class OfferService {
     const exclusionOptions = await this.exclusionOptions();
     if (isExcludedProduct(validation.offer, exclusionOptions)) {
       return { ok: false, error: exclusionMessage(analyzeExclusion(validation.offer, exclusionOptions).reasons) };
+    }
+    const categorySettings = this.settingsService?.categorySettings
+      ? await this.settingsService.categorySettings()
+      : null;
+    const sourceName = String(merged.source ?? current.source ?? 'manual');
+    if (
+      categorySettings &&
+      sourceName !== 'manual' &&
+      !offerMatchesCategories(validation.offer, categorySettings)
+    ) {
+      return { ok: false, error: categoryMismatchMessage(validation.offer, categorySettings) };
     }
 
     const next = {

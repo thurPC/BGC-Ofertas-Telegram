@@ -1,6 +1,7 @@
 import { logger } from '../logger.js';
 import { chooseSendMode, formatOfferHtml } from '../formatters/offer-message.js';
 import { analyzeExclusion, exclusionMessage } from './exclusion-filter.js';
+import { categoryMismatchMessage, offerMatchesCategories } from './category-service.js';
 import { duplicateMessage, findDuplicates, fingerprint, identityKeys, OFFER_STATUS } from './offer-service.js';
 import { defaultTemplate, mergeTemplate } from './template-service.js';
 import { validateHttpUrl } from './validation-service.js';
@@ -27,12 +28,13 @@ function publicError(error) {
 }
 
 export class PublishingService {
-  constructor({ bot, config, offerService, templateService, couponService }) {
+  constructor({ bot, config, offerService, templateService, couponService, settingsService }) {
     this.bot = bot;
     this.config = config;
     this.offerService = offerService;
     this.templateService = templateService;
     this.couponService = couponService;
+    this.settingsService = settingsService;
     this.inFlight = new Set();
   }
 
@@ -64,11 +66,30 @@ export class PublishingService {
     return {};
   }
 
+  async categorySettings() {
+    if (this.settingsService?.categorySettings) {
+      return this.settingsService.categorySettings();
+    }
+    if (this.offerService?.settingsService?.categorySettings) {
+      return this.offerService.settingsService.categorySettings();
+    }
+    return null;
+  }
+
   async canPublish(offer) {
     if (!offer) return { ok: false, error: 'Oferta não encontrada.' };
     const exclusion = analyzeExclusion(offer, await this.exclusionOptions());
     if (exclusion.excluded) {
       return { ok: false, error: exclusionMessage(exclusion.reasons) };
+    }
+    const categorySettings = await this.categorySettings();
+    const sourceName = String(offer.source ?? 'manual');
+    if (
+      categorySettings &&
+      sourceName !== 'manual' &&
+      !offerMatchesCategories(offer, categorySettings)
+    ) {
+      return { ok: false, error: categoryMismatchMessage(offer, categorySettings) };
     }
     if (!offer.url) return { ok: false, error: 'Não é possível publicar sem um link válido.' };
     const url = validateHttpUrl(offer.url, { required: true });

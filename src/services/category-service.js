@@ -1,4 +1,4 @@
-import { DEFAULT_CATEGORIES } from './offer-scorer.js';
+import { DEFAULT_CATEGORIES, detectCategory } from './offer-scorer.js';
 import { escapeHtml } from './validation-service.js';
 
 export const CATEGORY_IDS = DEFAULT_CATEGORIES.map((item) => item.id);
@@ -46,7 +46,12 @@ export function normalizeExtras(values) {
     const key = keyword.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push({ keyword, enabled: extraEnabledOf(value) });
+    const extra = { keyword, enabled: extraEnabledOf(value) };
+    if (value && typeof value === 'object') {
+      if (value.id) extra.id = String(value.id);
+      if (value.name) extra.name = String(value.name);
+    }
+    result.push(extra);
   }
   return result.slice(0, 40);
 }
@@ -77,12 +82,49 @@ export function mergeCategorySettings(input = {}, fallback = defaultCategorySett
     .map((item) => String(item).trim().toLowerCase())
     .filter((id) => CATEGORY_IDS.includes(id));
   const extras = normalizeExtras(source.extras ?? source.extraKeywords ?? fallback.extras ?? fallback.extraKeywords);
+  const extraKeywords = extras.filter((item) => item.enabled).map((item) => item.keyword);
+  const hasAllowlist = enabled.length > 0 || extraKeywords.length > 0;
   return {
-    enabled: enabled.length ? enabled : [...base.enabled],
+    enabled: hasAllowlist ? enabled : [...base.enabled],
     extras,
-    extraKeywords: extras.filter((item) => item.enabled).map((item) => item.keyword),
+    extraKeywords,
     excludeBooks: source.excludeBooks !== false
   };
+}
+
+function normalizeMatchText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+export function offerMatchesCategories(offer, settings) {
+  const resolved = mergeCategorySettings(settings);
+  const detected = detectCategory(offer);
+  if (detected && resolved.enabled.includes(detected)) return true;
+  const haystack = normalizeMatchText(
+    `${offer?.name ?? ''} ${offer?.category ?? ''} ${offer?.description ?? ''} ${offer?.store ?? ''}`
+  );
+  if (!haystack) return false;
+  for (const extra of resolved.extras) {
+    if (!extra.enabled) continue;
+    const keyword = normalizeMatchText(extra.keyword);
+    if (keyword && haystack.includes(keyword)) return true;
+  }
+  return false;
+}
+
+export function categoryMismatchMessage(offer, settings) {
+  const resolved = mergeCategorySettings(settings);
+  const detected = detectCategory(offer);
+  const labels = enabledCategories(resolved).map((item) => item.label);
+  const parts = [...labels, ...resolved.extraKeywords];
+  const allowed = parts.length ? parts.join(', ') : 'nenhuma';
+  const found = detected ? categoryById(detected)?.label || detected : 'não identificada';
+  return `A oferta não pertence às categorias ativas (${allowed}). Categoria detectada: ${found}.`;
 }
 
 export function categoryById(id) {

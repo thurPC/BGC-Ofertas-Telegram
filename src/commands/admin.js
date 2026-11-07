@@ -18,7 +18,7 @@ export const ADMIN_HELP_TEXT = [
   'Fluxo de cadastro: nome, preço atual, preço anterior (opcional), PIX (opcional), cupom e condições, imagem, link, loja e validade.',
   'Ao final há prévia. Só publica depois de confirmação explícita.',
   'O modelo visual (BGC PROMOS) é editável com /modelo: texto, emojis, ordem dos campos, formato de preço, campos opcionais e o link do canal. É possível restaurar o padrão.',
-  'Categorias extras podem ser adicionadas, ativadas, desativadas ou removidas no painel. Só as ativas entram no filtro.',
+  'Categorias ativas definem o que o bot busca e publica. Itens extras entram como palavras-chave de busca. Só ofertas dessas categorias vão ao canal.',
   'O horário de operação usa horas cheias (0 a 23), sem minutos. Fora desse intervalo a publicação automática não roda.',
   'A publicação no canal vai com foto (quando houver) e o link no texto, sem botões inline, para não interferir nos comentários do grupo de discussão.',
   '',
