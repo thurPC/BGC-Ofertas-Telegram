@@ -10,6 +10,7 @@ import { applyDiversity, evaluateDedup, significantImprovement } from '../src/de
 import { mergeDealEngineConfig } from '../src/deal-engine/defaults.js';
 import { formatDiagnosticsReport } from '../src/deal-engine/diagnostics.js';
 import { identifyProduct, normalizeGtin, sameProductIdentity, variantsCompatible } from '../src/deal-engine/identity.js';
+import { collectDryRunOffers, runDryRun } from '../src/deal-engine/dry-run.js';
 import { dryRunOffer, evaluateOffer, runDealEngine } from '../src/deal-engine/pipeline.js';
 import { semanticCannotOverride } from '../src/deal-engine/semantic.js';
 import { validateAffiliateLink } from '../src/deal-engine/affiliate.js';
@@ -283,6 +284,90 @@ test('histórico persiste após reinício e a retenção não apaga a janela rec
   await again.prune(365);
   const kept = await again.history(identity.key);
   assert.ok(kept.length >= 1);
+});
+
+test('dry-run sem --file recusa quando nenhuma fonte está configurada', async () => {
+  const result = await runDryRun({
+    config: loadConfig({
+      TELEGRAM_BOT_TOKEN: 'x',
+      TELEGRAM_CHANNEL_ID: '-100',
+      ADMIN_IDS: '1'
+    }),
+    sources: [],
+    priceStore: { async init() {}, async record() {}, async stats() { return { sampleSize: 0, insufficient: true }; } }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.telegramSent, false);
+  assert.match(result.error, /Nenhuma fonte configurada/);
+});
+
+test('dry-run coleta ofertas das fontes configuradas, avalia e não envia Telegram', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bgc-dry-'));
+  const store = new PriceHistoryStore(path.join(dir, 'price-history.json'));
+  const source = {
+    name: 'json-feed',
+    isConfigured() {
+      return true;
+    },
+    describe() {
+      return { name: 'json-feed', configured: true };
+    },
+    async fetch() {
+      return { ok: true, offers: [gpu()], errors: [], reason: null };
+    }
+  };
+  const result = await runDryRun({
+    sources: [source],
+    priceStore: store,
+    limit: 5,
+    requireAffiliateLink: false,
+    config: loadConfig({
+      TELEGRAM_BOT_TOKEN: 'x',
+      TELEGRAM_CHANNEL_ID: '-100',
+      ADMIN_IDS: '1'
+    })
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.origin, 'configured-sources');
+  assert.equal(result.fetched, 1);
+  assert.equal(result.telegramSent, false);
+  assert.match(result.note, /nenhuma mensagem foi enviada/i);
+  assert.equal(result.results.length, 1);
+  assert.equal(result.sources[0].ok, true);
+});
+
+test('dry-run --file continua como override e fonte que falha não inventa ofertas', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'bgc-dry-file-'));
+  const store = new PriceHistoryStore(path.join(dir, 'price-history.json'));
+  const fixture = path.join(process.cwd(), 'test/fixtures/deal-engine-offers.json');
+  const fromFile = await runDryRun({
+    file: fixture,
+    priceStore: store,
+    requireAffiliateLink: false,
+    config: loadConfig({
+      TELEGRAM_BOT_TOKEN: 'x',
+      TELEGRAM_CHANNEL_ID: '-100',
+      ADMIN_IDS: '1'
+    })
+  });
+  assert.equal(fromFile.ok, true);
+  assert.equal(fromFile.origin, 'file');
+  assert.ok(fromFile.fetched >= 1);
+  assert.equal(fromFile.telegramSent, false);
+
+  const failing = {
+    name: 'shopee-open-api',
+    isConfigured() {
+      return true;
+    },
+    async fetch() {
+      return { ok: false, offers: [{ name: 'não deveria entrar' }], errors: ['auth'], reason: 'auth-error' };
+    }
+  };
+  const collected = await collectDryRunOffers([failing]);
+  assert.equal(collected.collected.length, 0);
+  assert.equal(collected.sourceErrors.length, 1);
+  assert.equal(collected.sourceErrors[0].reason, 'auth-error');
 });
 
 test('pipeline dry-run não publica e explica rejeição; fail-closed sem evidência', async () => {

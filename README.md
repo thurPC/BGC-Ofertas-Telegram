@@ -361,8 +361,9 @@ MIT. Veja `LICENSE`.
 
 Próximo passo de hospedagem: escolha um serviço com processo 24h e disco persistente, defina as mesmas variáveis de ambiente e inicie com `npm start`. Mantenha `OFFER_AUTO_PUBLISH=false` até validar busca real, links afiliados, canal privado de teste e a verificação de prontidão.
 
-Documentação do motor inteligente: `docs/DEAL_ENGINE.md`. Dry-run local:
+Documentação do motor inteligente: `docs/DEAL_ENGINE.md`. Dry-run local (fontes configuradas; `--file` é override opcional):
 
 ```bash
+npm run dry-run
 npm run dry-run -- --file test/fixtures/deal-engine-offers.json
 ```

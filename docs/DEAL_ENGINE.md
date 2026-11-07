@@ -110,11 +110,20 @@ Antes de publicar: revalida preço, estoque e URL. Preço pior ou oferta sumida 
 
 ## Dry-run
 
+Sem `--file`, o dry-run consulta as fontes já configuradas (`OFFER_FEED_URL` e/ou Shopee Affiliate) e avalia as ofertas reais pelo motor. Nada é enviado ao Telegram.
+
+```bash
+npm run dry-run
+npm run dry-run -- --limit 20 --data-dir ./data
+```
+
+`--file` continua disponível como override para um dump autorizado:
+
 ```bash
 npm run dry-run -- --file test/fixtures/deal-engine-offers.json --data-dir ./data
 ```
 
-Processa o JSON pelo motor completo e imprime identificação, categoria, histórico, scores, aprovação/rejeição e a mensagem que **seria** publicada. Nada é enviado ao Telegram.
+O relatório inclui origem (`configured-sources` ou `file`), erros por fonte, identificação, categoria, histórico, scores, aprovação/rejeição e a mensagem que **seria** publicada.
 
 Histórico insuficiente é explícito. Mocks de teste não provam desempenho real de mercado.
 
@@ -153,5 +162,5 @@ Não dependem de internet.
 
 1. Manter `OFFER_AUTO_PUBLISH=false`
 2. Conferir `/status` e `/diagnostico` após um ciclo
-3. Rodar `npm run dry-run` com um dump autorizado, se houver
+3. Rodar `npm run dry-run` (fontes reais configuradas) ou `--file` com um dump autorizado
 4. Não ativar publicação automática sem revisão humana do relatório
