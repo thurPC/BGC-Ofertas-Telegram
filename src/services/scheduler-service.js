@@ -31,6 +31,16 @@ function hasPublishedIdentity(candidate, publishedKeys) {
   return identityMatchesPublished(candidate, publishedKeys);
 }
 
+const CRITICAL_SOURCE_REASONS = new Set(['auth-error', 'system-error']);
+
+export function isCriticalSourceFailure(error) {
+  return CRITICAL_SOURCE_REASONS.has(error?.reason);
+}
+
+function blockingSourceErrors(sourceErrors = []) {
+  return sourceErrors.filter(isCriticalSourceFailure);
+}
+
 export class SchedulerService {
   constructor({
     config,
@@ -305,7 +315,8 @@ export class SchedulerService {
     }
 
     const incomingSourceErrors = sourceErrors || [];
-    if (publish && incomingSourceErrors.length > 0) {
+    const criticalErrors = blockingSourceErrors(incomingSourceErrors);
+    if (publish && criticalErrors.length > 0) {
       return {
         ok: false,
         fetched: Array.isArray(collected) ? collected.length : 0,
@@ -315,8 +326,14 @@ export class SchedulerService {
         excludedBooks: 0,
         selected: selection?.selected?.length || 0,
         errors: incomingSourceErrors,
-        note: 'Publicação automática bloqueada: uma ou mais fontes configuradas falharam. Nenhuma oferta foi importada ou publicada neste ciclo.'
+        note: 'Publicação automática bloqueada: uma fonte autenticada falhou de forma crítica. Nenhuma oferta foi importada ou publicada neste ciclo.'
       };
+    }
+    if (incomingSourceErrors.length > 0) {
+      logger.warn(
+        'Uma ou mais fontes falharam neste ciclo. Ofertas válidas das fontes saudáveis seguem; nada é inventado a partir da fonte indisponível.',
+        incomingSourceErrors.map((item) => `${item.source}:${item.reason || 'erro'}`).join(', ')
+      );
     }
 
     const current = existing || await this.offerService.list();
