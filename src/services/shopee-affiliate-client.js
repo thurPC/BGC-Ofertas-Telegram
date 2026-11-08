@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { roundMoney } from './validation-service.js';
+import { DEFAULT_USER_AGENT, classifyFetchError, describeNetworkError } from '../http.js';
 
 export const DEFAULT_SHOPEE_ENDPOINT = 'https://open-api.affiliate.shopee.com.br/graphql';
 export const DEFAULT_TIMEOUT_MS = 12000;
@@ -319,7 +320,8 @@ export class ShopeeAffiliateClient {
         headers: {
           Authorization: this.authorization(body, timestamp),
           'Content-Type': 'application/json',
-          Accept: 'application/json'
+          Accept: 'application/json',
+          'User-Agent': DEFAULT_USER_AGENT
         },
         body
       });
@@ -396,11 +398,13 @@ export class ShopeeAffiliateClient {
       }
       return { ok: true, data: payload.data, status: response.status };
     } catch (error) {
-      const timeout = error?.name === 'AbortError' || /timeout/i.test(String(error?.message || ''));
+      const reason = classifyFetchError(error);
+      const timeout = reason === 'timeout';
       return {
         ok: false,
         error: timeout ? 'Tempo esgotado ao consultar a Shopee.' : 'Falha de rede ao consultar a Shopee.',
-        reason: timeout ? 'timeout' : 'network'
+        reason: timeout ? 'timeout' : 'network',
+        diagnostics: { network: describeNetworkError(error) }
       };
     } finally {
       clearTimeout(timer);

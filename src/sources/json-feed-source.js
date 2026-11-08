@@ -8,8 +8,17 @@ import {
 import { couponFromOfferFields, extractFeedCoupons, normalizeCoupon } from '../services/coupon-service.js';
 import { calculateDiscount, validateOfferInput } from '../services/validation-service.js';
 import { ShopeeOfferSource } from './shopee-offer-source.js';
+import {
+  classifyFetchError,
+  defaultJsonHeaders,
+  describeNetworkError,
+  isRetryableHttpStatus,
+  sleep
+} from '../http.js';
 
 const DEFAULT_TIMEOUT_MS = 12000;
+const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_RETRY_BASE_MS = 400;
 
 export function extractFeedItems(payload) {
   if (Array.isArray(payload)) return { ok: true, items: payload };
@@ -97,18 +106,6 @@ export function parseFeedPayload(payload, sourceName = 'json-feed') {
   return { ok: true, offers, coupons, errors, skipped, reason: null };
 }
 
-function abortReason(error) {
-  const name = error?.name || '';
-  const message = String(error?.message || '');
-  if (name === 'AbortError' || name === 'TimeoutError' || /aborted|timeout/i.test(message)) {
-    return 'timeout';
-  }
-  if (error instanceof SyntaxError || /json/i.test(message)) {
-    return 'invalid-json';
-  }
-  return 'network';
-}
-
 export class JsonFeedSource extends OfferSource {
   constructor(feedUrl, options = {}) {
     super('json-feed');
@@ -117,6 +114,12 @@ export class JsonFeedSource extends OfferSource {
     this.timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
       ? options.timeoutMs
       : DEFAULT_TIMEOUT_MS;
+    this.maxRetries = Number.isInteger(options.maxRetries) && options.maxRetries >= 0
+      ? options.maxRetries
+      : DEFAULT_MAX_RETRIES;
+    this.retryBaseMs = Number.isFinite(options.retryBaseMs) && options.retryBaseMs >= 0
+      ? options.retryBaseMs
+      : DEFAULT_RETRY_BASE_MS;
   }
 
   isConfigured() {
@@ -163,15 +166,60 @@ export class JsonFeedSource extends OfferSource {
       };
     }
 
+    const attempts = this.maxRetries + 1;
+    let last = {
+      ok: false,
+      offers: [],
+      coupons: [],
+      errors: ['Falha de rede ao consultar o feed.'],
+      skipped: 0,
+      reason: 'network',
+      status: null
+    };
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (attempt > 0) {
+        await sleep(this.retryBaseMs * 2 ** (attempt - 1));
+      }
+      last = await this.#send();
+      if (last.ok) return last;
+      const retryable =
+        last.reason === 'timeout' ||
+        last.reason === 'network' ||
+        (last.reason === 'http-error' && isRetryableHttpStatus(last.status));
+      if (!retryable) {
+        this.#logFailure(last);
+        return last;
+      }
+    }
+    this.#logFailure(last);
+    return last;
+  }
+
+  #logFailure(result) {
+    if (result?.reason === 'http-error') {
+      logger.warn(`Feed JSON retornou HTTP ${result.status}.`);
+      return;
+    }
+    if (result?.reason === 'invalid-json') {
+      logger.warn('Feed JSON retornou conteúdo que não é JSON válido.');
+      return;
+    }
+    logger.warn(
+      'Falha ao consultar feed JSON autorizado.',
+      result.detail || result.errors?.[0] || result.reason || 'erro'
+    );
+  }
+
+  async #send() {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const response = await this.fetchImpl(this.feedUrl, {
         signal: controller.signal,
-        headers: { Accept: 'application/json,text/plain;q=0.9,*/*;q=0.8' }
+        headers: defaultJsonHeaders()
       });
       if (!response.ok) {
-        logger.warn(`Feed JSON retornou HTTP ${response.status}.`);
         return {
           ok: false,
           offers: [],
@@ -200,7 +248,6 @@ export class JsonFeedSource extends OfferSource {
       try {
         payload = JSON.parse(rawText);
       } catch {
-        logger.warn('Feed JSON retornou conteúdo que não é JSON válido.');
         return {
           ok: false,
           offers: [],
@@ -215,8 +262,8 @@ export class JsonFeedSource extends OfferSource {
       const parsed = parseFeedPayload(payload, this.name);
       return { ...parsed, status: response.status };
     } catch (error) {
-      const reason = abortReason(error);
-      logger.warn('Falha ao consultar feed JSON autorizado.', error.message);
+      const reason = classifyFetchError(error);
+      const detail = describeNetworkError(error);
       return {
         ok: false,
         offers: [],
@@ -224,7 +271,8 @@ export class JsonFeedSource extends OfferSource {
         errors: [reason === 'timeout' ? 'Tempo esgotado ao consultar o feed.' : 'Falha de rede ao consultar o feed.'],
         skipped: 0,
         reason,
-        status: null
+        status: null,
+        detail
       };
     } finally {
       clearTimeout(timer);

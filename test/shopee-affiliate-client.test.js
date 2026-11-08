@@ -291,6 +291,18 @@ test('trata autenticação, HTTP, timeout, JSON inválido e GraphQL', async () =
       })
   });
   assert.equal((await timeout.searchProducts('x')).reason, 'timeout');
+
+  const wrappedAbort = new ShopeeAffiliateClient({
+    appId: '1',
+    secret: 'x',
+    maxRetries: 0,
+    fetchImpl: async () => {
+      const error = new TypeError('fetch failed');
+      error.cause = Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+      throw error;
+    }
+  });
+  assert.equal((await wrappedAbort.searchProducts('x')).reason, 'timeout');
 });
 
 test('retry com backoff em falha transitória e desiste em erro de autenticação', async () => {
@@ -309,6 +321,27 @@ test('retry com backoff em falha transitória e desiste em erro de autenticaçã
   const recovered = await retry.searchProducts('x');
   assert.equal(recovered.ok, true);
   assert.equal(calls, 3);
+
+  let networkCalls = 0;
+  const network = new ShopeeAffiliateClient({
+    appId: '1',
+    secret: 'x',
+    maxRetries: 2,
+    retryBaseMs: 1,
+    fetchImpl: async (_url, options) => {
+      networkCalls += 1;
+      assert.match(options.headers['User-Agent'], /BGC-Ofertas/);
+      if (networkCalls < 3) {
+        const error = new TypeError('fetch failed');
+        error.cause = Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' });
+        throw error;
+      }
+      return jsonResponse({ data: { productOfferV2: { nodes: [], pageInfo: { hasNextPage: false } } } });
+    }
+  });
+  const recoveredNetwork = await network.searchProducts('x');
+  assert.equal(recoveredNetwork.ok, true);
+  assert.equal(networkCalls, 3);
 
   let authCalls = 0;
   const auth = new ShopeeAffiliateClient({

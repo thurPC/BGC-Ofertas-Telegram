@@ -1,6 +1,7 @@
 import dns from 'node:dns/promises';
 import { parseBrazilianPrice, roundMoney } from './validation-service.js';
 import { createShopeeAffiliateClient } from './shopee-affiliate-client.js';
+import { DEFAULT_USER_AGENT, classifyFetchError } from '../http.js';
 
 const DEFAULT_TIMEOUT_MS = 12000;
 const MAX_HTML_CHARS = 1_000_000;
@@ -550,10 +551,14 @@ export async function safeFetch(url, options = {}) {
       response = await fetcher(current, {
         redirect: 'manual',
         signal: controller.signal,
-        headers: { Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8' }
+        headers: {
+          Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+          'User-Agent': DEFAULT_USER_AGENT
+        }
       });
     } catch (error) {
-      const aborted = error?.name === 'AbortError' || /abort|timeout/i.test(String(error?.message || ''));
+      const reason = classifyFetchError(error);
+      const aborted = reason === 'timeout';
       return {
         ok: false,
         error: aborted ? 'Tempo esgotado ao consultar a página.' : 'Falha de rede ao consultar a página.',

@@ -104,6 +104,7 @@ test('JSON com estrutura inválida não vira oferta', () => {
 
 test('falha HTTP não derruba a fonte', async () => {
   const source = new JsonFeedSource('https://example.test/feed.json', {
+    maxRetries: 0,
     fetchImpl: async () => jsonResponse('erro', 503)
   });
   const result = await source.fetch();
@@ -123,6 +124,7 @@ test('JSON inválido e timeout são tratados', async () => {
 
   const timeout = new JsonFeedSource('https://example.test/feed.json', {
     timeoutMs: 5,
+    maxRetries: 0,
     fetchImpl: async (_url, options) =>
       new Promise((_, reject) => {
         options.signal.addEventListener('abort', () => {
@@ -250,4 +252,45 @@ test('lê o feed.json real hospedado no GitHub sem publicar', async () => {
   assert.equal(offer.url, 'https://www.mercadolivre.com.br/');
   assert.equal(offer.store, 'Mercado Livre');
   assert.equal(offer.coupon, 'TESTE10');
+});
+
+test('repete fetch failed transitório e envia User-Agent', async () => {
+  let calls = 0;
+  let headers;
+  const source = new JsonFeedSource('https://example.test/feed.json', {
+    maxRetries: 2,
+    retryBaseMs: 1,
+    fetchImpl: async (_url, options) => {
+      calls += 1;
+      headers = options.headers;
+      if (calls < 3) {
+        const error = new TypeError('fetch failed');
+        error.cause = Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' });
+        throw error;
+      }
+      return jsonResponse(SAMPLE_FEED);
+    }
+  });
+  const result = await source.fetch();
+  assert.equal(result.ok, true);
+  assert.equal(calls, 3);
+  assert.equal(result.offers.length, 1);
+  assert.match(String(headers['User-Agent'] || ''), /BGC-Ofertas/);
+});
+
+test('HTTP 503 do feed é repetido e depois desiste', async () => {
+  let calls = 0;
+  const source = new JsonFeedSource('https://example.test/feed.json', {
+    maxRetries: 2,
+    retryBaseMs: 1,
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse('erro', 503);
+    }
+  });
+  const result = await source.fetch();
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'http-error');
+  assert.equal(result.status, 503);
+  assert.equal(calls, 3);
 });
