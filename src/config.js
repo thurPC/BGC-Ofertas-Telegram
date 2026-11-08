@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mergeDealEngineConfig } from './deal-engine/defaults.js';
+import { parsePuxadorSourceChatIds } from './puxador/source-config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -120,6 +121,7 @@ export function loadConfig(env = process.env) {
     dataDir,
     logLevel: trim(env.LOG_LEVEL) || 'info',
     feedUrl: trim(env.OFFER_FEED_URL),
+    puxadorSourceChatIds: parsePuxadorSourceChatIds(env.PUXADOR_SOURCE_CHAT_IDS),
     channelLink: trim(env.BGC_CHANNEL_LINK),
     shopeeAppId: trim(env.SHOPEE_APP_ID),
     shopeeAppSecret: trim(env.SHOPEE_APP_SECRET),

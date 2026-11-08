@@ -25,6 +25,8 @@ import { InstanceLock } from './src/process-lock.js';
 import { createShopeeAffiliateClient } from './src/services/shopee-affiliate-client.js';
 import { evaluateReadiness } from './src/services/readiness-service.js';
 import { PriceHistoryStore } from './src/deal-engine/price-store.js';
+import { PuxadorInboxStore } from './src/puxador/inbox-store.js';
+import { registerPuxadorChannelPostHandler } from './src/puxador/channel-post-handler.js';
 
 dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
 
@@ -93,6 +95,8 @@ async function main() {
   await storage.init();
   const priceStore = PriceHistoryStore.fromConfig(config);
   await priceStore.init();
+  const puxadorInboxStore = new PuxadorInboxStore(path.join(config.dataDir, 'puxador-inbox.json'));
+  await puxadorInboxStore.init();
 
   const settingsService = new SettingsService(storage, config);
   const categoryService = new CategoryService(storage, {
@@ -103,6 +107,11 @@ async function main() {
   const offerService = new OfferService(storage, { settingsService, couponService });
   const templateService = new TemplateService(storage);
   bot = createBot(config.token);
+  registerPuxadorChannelPostHandler(bot, {
+    allowedChatIds: config.puxadorSourceChatIds,
+    inboxStore: puxadorInboxStore,
+    logger
+  });
   const publishingService = new PublishingService({
     bot,
     config,
@@ -136,7 +145,8 @@ async function main() {
     settingsService,
     categoryService,
     couponService,
-    linkOptions
+    linkOptions,
+    puxadorInboxStore
   };
 
   registerPublicCommands(bot);
