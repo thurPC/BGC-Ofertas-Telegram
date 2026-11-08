@@ -66,6 +66,9 @@ export class PuxadorInboxStore {
       }
       const item = {
         ...capture,
+        sources: Array.isArray(capture.sources) && capture.sources.length
+          ? capture.sources
+          : [{ chatId: capture.sourceChatId, messageId: capture.sourceMessageId }],
         id: `${capture.sourceChatId}:${capture.sourceMessageId}`,
         productKey,
         status: 'discovered',
