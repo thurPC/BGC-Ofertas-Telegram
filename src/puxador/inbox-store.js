@@ -30,8 +30,9 @@ export class PuxadorInboxStore {
     try {
       const parsed = JSON.parse(await fs.readFile(this.filePath, 'utf8'));
       return { version: 1, items: Array.isArray(parsed.items) ? parsed.items : [] };
-    } catch {
-      return structuredClone(EMPTY);
+    } catch (error) {
+      if (error?.code === 'ENOENT') return structuredClone(EMPTY);
+      throw new Error(`Não foi possível ler a caixa de entrada do Puxador: ${error?.message || 'erro desconhecido'}`);
     }
   }
 
